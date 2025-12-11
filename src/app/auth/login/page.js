@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react'; // Suspense یہاں امپورٹ کیا ہے
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LayoutDashboard, Loader2, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
-export default function LoginPage() {
+// 1. آپ کا اصل کوڈ اب ایک الگ کمپوننٹ ہے (LoginForm کے نام سے)
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mobile, setMobile] = useState('');
@@ -28,11 +29,12 @@ export default function LoginPage() {
         password,
       });
 
-      if (res.error) {
+      if (res?.error) {
         setError('Invalid credentials');
         setLoading(false);
       } else {
         router.push('/dashboard');
+        router.refresh();
       }
     } catch (error) {
       setError('An error occurred');
@@ -192,5 +194,18 @@ export default function LoginPage() {
          </motion.div>
       </div>
     </div>
+  );
+}
+
+// 2. یہ مین ایکسپورٹ ہے جو Suspense لگا کر ایرر روکتا ہے
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-white dark:bg-gray-900">
+        <Loader2 className="h-8 w-8 animate-spin text-[#4f46e5]" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
