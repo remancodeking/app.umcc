@@ -1,8 +1,32 @@
+"use client"
+
 import Link from 'next/link';
 import Image from 'next/image';
-import { Plane, Users, CheckCircle, Shield, ArrowRight, Star, TrendingUp, Clock, MapPin, Briefcase } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { useTheme } from 'next-themes';
+import { Plane, Users, CheckCircle, Shield, ArrowRight, Star, TrendingUp, Clock, MapPin, Briefcase, LayoutDashboard, Sun, Moon, Laptop } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
+function ModeToggle() {
+  const { setTheme } = useTheme();
+  // Ensure hydration match
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <div className="w-[88px] h-[34px] bg-gray-100 rounded-lg animate-pulse"></div>;
+
+  return (
+    <div className="flex gap-1 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-1 rounded-lg">
+      <button onClick={() => setTheme("light")} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition"><Sun className="h-4 w-4" /></button>
+      <button onClick={() => setTheme("dark")} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition"><Moon className="h-4 w-4" /></button>
+      <button onClick={() => setTheme("system")} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition"><Laptop className="h-4 w-4" /></button>
+    </div>
+  )
+}
 
 export default function Home() {
+  const { data: session, status } = useSession();
+  const isLoggedIn = status === 'authenticated';
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-amber-500/30">
       
@@ -27,26 +51,42 @@ export default function Home() {
             </div>
           </div>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-gray-500 dark:text-gray-400">
+          <nav className="hidden lg:flex items-center gap-8 text-sm font-semibold text-gray-500 dark:text-gray-400">
             <Link href="#services" className="hover:text-[var(--primary)] dark:hover:text-white transition-colors">Services</Link>
             <Link href="#about" className="hover:text-[var(--primary)] dark:hover:text-white transition-colors">About</Link>
             <Link href="#careers" className="hover:text-[var(--primary)] dark:hover:text-white transition-colors">Careers</Link>
             <Link href="#contact" className="hover:text-[var(--primary)] dark:hover:text-white transition-colors">Contact</Link>
           </nav>
 
-          <div className="flex items-center gap-4">
-            <Link 
-              href="/auth/login" 
-              className="text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-[var(--primary)] dark:hover:text-white transition-colors"
-            >
-              Sign In
-            </Link>
-            <Link 
-              href="/auth/signup"
-              className="hidden sm:inline-flex items-center justify-center rounded-xl text-sm font-bold bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 transition-all h-10 px-6 shadow-xl shadow-gray-900/10 dark:shadow-white/5"
-            >
-              Get Started
-            </Link>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:block mr-2">
+                <ModeToggle />
+            </div>
+
+            {isLoggedIn ? (
+                <Link 
+                  href="/dashboard"
+                  className="hidden sm:inline-flex items-center justify-center rounded-xl text-sm font-bold bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 transition-all h-10 px-6 shadow-xl shadow-gray-900/10 dark:shadow-white/5 gap-2"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  Dashboard
+                </Link>
+            ) : (
+                <>
+                    <Link 
+                      href="/auth/login" 
+                      className="text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-[var(--primary)] dark:hover:text-white transition-colors"
+                    >
+                      Sign In
+                    </Link>
+                    <Link 
+                      href="/auth/signup"
+                      className="hidden sm:inline-flex items-center justify-center rounded-xl text-sm font-bold bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 transition-all h-10 px-6 shadow-xl shadow-gray-900/10 dark:shadow-white/5"
+                    >
+                      Get Started
+                    </Link>
+                </>
+            )}
           </div>
         </div>
       </header>
@@ -79,13 +119,23 @@ export default function Home() {
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-                  <Link 
-                    href="/auth/signup"
-                    className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl text-base font-bold bg-[#D4AF37] hover:bg-[#c4a02e] text-white transition-all h-12 px-8 shadow-lg shadow-amber-500/20"
-                  >
-                    Join Our Network
-                    <ArrowRight className="ml-2 h-5 w-5" />
-                  </Link>
+                  {isLoggedIn ? (
+                      <Link 
+                        href="/dashboard"
+                        className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl text-base font-bold bg-[#D4AF37] hover:bg-[#c4a02e] text-white transition-all h-12 px-8 shadow-lg shadow-amber-500/20 gap-2"
+                      >
+                         <LayoutDashboard className="h-5 w-5" />
+                        Go to Dashboard
+                      </Link>
+                  ) : (
+                      <Link 
+                        href="/auth/signup"
+                        className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl text-base font-bold bg-[#D4AF37] hover:bg-[#c4a02e] text-white transition-all h-12 px-8 shadow-lg shadow-amber-500/20"
+                      >
+                        Join Our Network
+                        <ArrowRight className="ml-2 h-5 w-5" />
+                      </Link>
+                  )}
                   <Link
                     href="#contact" 
                     className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl text-base font-bold border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white transition-all h-12 px-8"
@@ -104,7 +154,7 @@ export default function Home() {
               </div>
 
               {/* Visual/Image Side */}
-              <div className="flex-1 relative w-full max-w-lg lg:max-w-none">
+              <div className="flex-1 relative w-full w-full max-w-lg lg:max-w-none">
                  <div className="relative aspect-square w-full rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white/50 dark:border-gray-800/50 bg-gray-100 dark:bg-gray-900">
                     <div className="absolute inset-0 bg-gradient-to-br from-gray-900/5 to-gray-900/20 dark:from-white/5 dark:to-transparent z-10"></div>
                     {/* Placeholder for a nice hero image, using the logo as a fallback centerpiece for now */}
@@ -168,7 +218,7 @@ export default function Home() {
                ].map((feature, idx) => (
                  <div key={idx} className="group p-8 rounded-[2rem] bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 hover:shadow-2xl hover:shadow-gray-200/50 dark:hover:shadow-black/50 transition-all duration-300 hover:-translate-y-1">
                     <div className={`h-14 w-14 rounded-2xl ${feature.color} bg-opacity-10 flex items-center justify-center text-${feature.color.replace('bg-', '')} mb-6 group-hover:scale-110 transition-transform`}>
-                       {feature.icon} {/* Note: Text color class mapping is simplified here for demo */}
+                       {feature.icon}
                     </div>
                     <h3 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">{feature.title}</h3>
                     <p className="text-gray-500 dark:text-gray-400 leading-relaxed">{feature.desc}</p>

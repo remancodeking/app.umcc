@@ -1,13 +1,12 @@
 "use client"
 
-import { useState, Suspense } from 'react'; // Suspense یہاں امپورٹ کیا ہے
+import { useState, Suspense } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LayoutDashboard, Loader2, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
-// 1. آپ کا اصل کوڈ اب ایک الگ کمپوننٹ ہے (LoginForm کے نام سے)
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,19 +44,24 @@ function LoginForm() {
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 overflow-hidden bg-white dark:bg-gray-900">
       
-      {/* Left Side - Visual & Brand - Animated Gradient */}
+      {/* Left Side - Visual & Brand - Animated Gradient with Premium Gold Theme */}
       <div className="relative hidden lg:flex flex-col justify-between p-16 text-white overflow-hidden">
          {/* Animated Background */}
-         <div className="absolute inset-0 bg-gradient-to-br from-[#4f46e5] via-[#7c3aed] to-[#2563eb] animate-gradient-slow z-0"></div>
+         <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-black animate-gradient-slow z-0"></div>
+         {/* Gold Shine Effect */}
+         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#D4AF37]/20 rounded-full blur-[120px] pointer-events-none"></div>
          <div className="absolute inset-0 bg-grid-white/[0.05] z-[1]"></div>
          
          {/* Content */}
          <div className="relative z-10">
              <div className="flex items-center gap-3 font-bold text-3xl tracking-tight">
-                <div className="p-2.5 bg-white/20 backdrop-blur-md rounded-xl shadow-lg border border-white/10">
-                  <LayoutDashboard className="h-8 w-8 text-white" />
+                <div className="p-2.5 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/10 text-[#D4AF37]">
+                  <LayoutDashboard className="h-8 w-8" />
                 </div>
-                UMCC
+                <div>
+                    <span className="text-white">UMCC</span>
+                    <span className="block text-[10px] text-[#D4AF37] tracking-[0.2em] font-medium leading-none mt-1">SHARAKAT AL HARAK</span>
+                </div>
              </div>
          </div>
 
@@ -69,9 +73,9 @@ function LoginForm() {
             >
                <h1 className="text-5xl font-extrabold leading-tight tracking-tight text-white mb-6">
                   Streamline Your <br/>
-                  <span className="text-white/80">Operations.</span>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB]">Operations.</span>
                </h1>
-               <p className="text-lg text-blue-100 font-medium leading-relaxed">
+               <p className="text-lg text-gray-300 font-medium leading-relaxed">
                   Manage airport trolley services, staff shifts, and operational logistics all in one unified, intelligent platform.
                </p>
             </motion.div>
@@ -84,14 +88,14 @@ function LoginForm() {
             >
                 <div className="flex -space-x-3">
                    {[1,2,3,4].map(i => (
-                      <div key={i} className="h-10 w-10 rounded-full border-2 border-[#6366f1] bg-white/20 backdrop-blur-sm" />
+                      <div key={i} className="h-10 w-10 rounded-full border-2 border-gray-800 bg-gray-700" />
                    ))}
                 </div>
-                <div className="text-sm font-medium text-blue-100">Trusted by 120+ Staff Members</div>
+                <div className="text-sm font-medium text-gray-300">Trusted by 120+ Staff Members</div>
             </motion.div>
          </div>
 
-         <div className="relative z-10 text-sm font-medium text-blue-200">
+         <div className="relative z-10 text-sm font-medium text-gray-400">
             © 2025 UMCC Services. All rights reserved.
          </div>
       </div>
@@ -127,7 +131,7 @@ function LoginForm() {
                     required
                     value={mobile}
                     onChange={(e) => setMobile(e.target.value)}
-                    className="flex h-12 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-base placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/50 focus:border-[#4f46e5] transition-all shadow-sm"
+                    className="flex h-12 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-base placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37] transition-all shadow-sm"
                     placeholder="05..."
                   />
                </div>
@@ -140,7 +144,7 @@ function LoginForm() {
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="flex h-12 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-base placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/50 focus:border-[#4f46e5] transition-all shadow-sm pr-10"
+                      className="flex h-12 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-base placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37] transition-all shadow-sm pr-10"
                       placeholder="••••••••"
                     />
                     <button
@@ -152,7 +156,7 @@ function LoginForm() {
                     </button>
                   </div>
                   <div className="flex justify-end">
-                     <Link href="#" className="text-sm font-medium text-[#4f46e5] hover:text-[#4338ca] transition-colors">
+                     <Link href="#" className="text-sm font-medium text-[#D4AF37] hover:text-[#c4a02e] transition-colors">
                         Forgot password?
                      </Link>
                   </div>
@@ -161,14 +165,14 @@ function LoginForm() {
                <button 
                   type="submit" 
                   disabled={loading}
-                  className="group relative w-full h-12 bg-[#4f46e5] hover:bg-[#4338ca] text-white rounded-xl text-base font-semibold transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 flex items-center justify-center gap-2 overflow-hidden"
+                  className="group relative w-full h-12 bg-gray-900 hover:bg-black text-white rounded-xl text-base font-semibold transition-all shadow-lg shadow-gray-900/20 hover:shadow-gray-900/30 flex items-center justify-center gap-2 overflow-hidden border border-[#D4AF37]/50"
                >
                   {loading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <Loader2 className="h-5 w-5 animate-spin text-[#D4AF37]" />
                   ) : (
                     <>
                       Sign In 
-                      <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                      <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform text-[#D4AF37]" />
                     </>
                   )}
                </button>
@@ -186,7 +190,7 @@ function LoginForm() {
             <div className="text-center">
                <p className="text-gray-500 dark:text-gray-400">
                   Don't have an account?{' '}
-                  <Link href="/auth/signup" className="font-semibold text-[#4f46e5] hover:text-[#4338ca] transition-colors">
+                  <Link href="/auth/signup" className="font-semibold text-[#D4AF37] hover:text-[#c4a02e] transition-colors">
                      Sign up
                   </Link>
                </p>
@@ -197,12 +201,11 @@ function LoginForm() {
   );
 }
 
-// 2. یہ مین ایکسپورٹ ہے جو Suspense لگا کر ایرر روکتا ہے
 export default function LoginPage() {
   return (
     <Suspense fallback={
       <div className="flex h-screen items-center justify-center bg-white dark:bg-gray-900">
-        <Loader2 className="h-8 w-8 animate-spin text-[#4f46e5]" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" />
       </div>
     }>
       <LoginForm />
