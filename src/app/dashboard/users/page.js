@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { 
   UserPlus, Search, Filter, MoreHorizontal, FileText, CheckCircle, 
-  XCircle, X, Loader2, LayoutGrid, List, Eye, Edit, Trash
+  XCircle, X, Loader2, LayoutGrid, List, Eye, Edit, Trash,
+  DollarSign, TrendingUp, Calendar, Wallet, User as UserIcon
 } from "lucide-react";
 import toast from 'react-hot-toast';
 
@@ -14,9 +15,14 @@ export default function UserManagementPage() {
   const [viewMode, setViewMode] = useState("table"); 
   
   // Modal States
-  const [isModalOpen, setIsModalOpen] = useState(false); // Unified modal
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false); // Add/Edit
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false); // View Profile
   const [selectedUser, setSelectedUser] = useState(null);
+  
+  // Salary Data State
+  const [salaryData, setSalaryData] = useState(null);
+  const [salaryLoading, setSalaryLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'salary'
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [users, setUsers] = useState([]);
@@ -86,8 +92,6 @@ export default function UserManagementPage() {
 
   const [errors, setErrors] = useState({});
 
-  // ... (existing helper functions)
-
   const validateForm = () => {
     const newErrors = {};
     if (!formData.name.trim()) newErrors.name = "Full Name is required";
@@ -154,9 +158,25 @@ export default function UserManagementPage() {
     }
   };
 
-  const handleViewUser = (user) => {
+  const handleViewUser = async (user) => {
     setSelectedUser(user);
     setIsViewModalOpen(true);
+    setSalaryData(null); // Reset prev data
+    setActiveTab('overview');
+    
+    // Fetch Salary Data
+    setSalaryLoading(true);
+    try {
+        const res = await fetch(`/api/users/${user._id}/salary`);
+        if(res.ok) {
+            setSalaryData(await res.json());
+        }
+    } catch(e) {
+        console.error("Failed fetching salary", e);
+        toast.error("Could not fetch salary history");
+    } finally { 
+        setSalaryLoading(false); 
+    }
   }
 
   const filteredUsers = users.filter(user => 
@@ -381,15 +401,6 @@ export default function UserManagementPage() {
                            </span>
                         </div>
                      </div>
-                     <div className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-gray-800/50">
-                        <span className="text-gray-400 text-xs uppercase tracking-wide font-medium">Role</span>
-                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{user.role}</span>
-                     </div>
-                  </div>
-
-                  <div className="mt-5 pt-4 flex items-center justify-between text-xs text-gray-400 font-mono bg-gray-50 dark:bg-gray-800/50 -mx-6 -mb-6 px-6 py-3 border-t border-gray-100 dark:border-gray-800">
-                     <span>Code: {user.empCode || 'N/A'}</span>
-                     <span className="flex items-center gap-1"><CheckCircle className="h-3 w-3" /> {user.mobile}</span>
                   </div>
                </div>
              ))}
@@ -526,107 +537,161 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* View User Modal */}
+      {/* NEW PREMIUM VIEW USER MODAL */}
       {isViewModalOpen && selectedUser && (
          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-gray-900 w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="bg-white dark:bg-gray-900 w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
                
-               {/* Header Background */}
-               <div className="h-24 bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 relative">
-                  <button onClick={() => setIsViewModalOpen(false)} className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 backdrop-blur-md rounded-full text-gray-900 dark:text-white transition-colors">
-                    <X className="h-4 w-4" />
+               {/* Decorative Background */}
+               <div className="h-32 bg-gray-900 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-90"></div>
+                  <div className="absolute top-0 right-0 p-20 bg-white/5 rounded-full blur-3xl transform translate-x-10 -translate-y-10"></div>
+                  <button onClick={() => setIsViewModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white transition-colors">
+                    <X className="h-5 w-5" />
                   </button>
                </div>
 
-               <div className="px-6 pb-6 -mt-12 relative flex-1 overflow-y-auto custom-scrollbar">
-                  {/* Profile Header */}
-                  <div className="flex flex-col items-center mb-6">
-                     <div className="h-24 w-24 rounded-full border-[4px] border-white dark:border-gray-900 bg-white shadow-lg flex items-center justify-center text-3xl font-bold bg-gradient-to-br from-[var(--primary)] to-indigo-600 text-white">
-                        {selectedUser.name?.[0]?.toUpperCase()}
-                     </div>
-                     <div className="text-center mt-3">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center justify-center gap-2">
-                           {selectedUser.name}
-                        </h2>
-                        <div className="flex items-center justify-center gap-2 mt-2">
-                           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50">
-                              {selectedUser.designation}
-                           </span>
-                           <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
-                              selectedUser.status === 'In Work' 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                              : 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-900/30 dark:text-rose-400'
-                           }`}>
-                              {selectedUser.status}
-                           </span>
-                        </div>
-                     </div>
+               <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                  {/* LEFT SIDE: Identity */}
+                  <div className="w-full md:w-80 bg-gray-50 dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 flex flex-col p-6 overflow-y-auto">
+                      <div className="-mt-16 mb-4 flex flex-col items-center">
+                         <div className="h-28 w-28 rounded-3xl border-4 border-white dark:border-gray-800 bg-white shadow-xl flex items-center justify-center text-4xl font-bold bg-gradient-to-br from-blue-500 to-indigo-600 text-white transform rotate-3 hover:rotate-0 transition-transform duration-300">
+                            {selectedUser.name?.[0]?.toUpperCase()}
+                         </div>
+                         <h2 className="text-xl font-bold text-gray-900 dark:text-white mt-4 text-center">{selectedUser.name}</h2>
+                         <p className="text-sm text-gray-500 font-medium">{selectedUser.designation}</p>
+                         <div className="flex gap-2 mt-3">
+                             <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${selectedUser.status === 'In Work' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                                 {selectedUser.status}
+                             </div>
+                             <div className="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-gray-100 text-gray-600 border-gray-200">
+                                 Shift {selectedUser.shift}
+                             </div>
+                         </div>
+                      </div>
+
+                      <div className="space-y-4 mt-4">
+                          <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                              <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Employee Code</p>
+                              <p className="font-mono font-bold dark:text-white">{selectedUser.empCode}</p>
+                          </div>
+                          <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                              <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Contact</p>
+                              <p className="font-bold text-sm dark:text-white">{selectedUser.mobile}</p>
+                              <p className="text-xs text-gray-400 truncate">{selectedUser.email}</p>
+                          </div>
+                          <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                              <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Location</p>
+                              <p className="font-bold text-sm dark:text-white flex items-center gap-1"><CheckCircle className="h-3 w-3 text-green-500"/> {selectedUser.terminal}</p>
+                          </div>
+                      </div>
                   </div>
-                  
-                  {/* Details Grid */}
-                  <div className="space-y-6">
-                     <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-[var(--primary)]/20 transition-colors">
-                           <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Role</span>
-                           <p className="font-semibold text-gray-900 dark:text-white mt-0.5">{selectedUser.role}</p>
-                        </div>
-                        <div className="p-4 bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-[var(--primary)]/20 transition-colors">
-                           <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Shift</span>
-                           <p className="font-semibold text-gray-900 dark:text-white mt-0.5 flex items-center gap-2">
-                              Shift {selectedUser.shift}
-                              <span className={`w-2 h-2 rounded-full ${selectedUser.shift === 'A' ? 'bg-indigo-500' : 'bg-pink-500'}`}></span>
-                           </p>
-                        </div>
-                        <div className="p-4 bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-[var(--primary)]/20 transition-colors col-span-2">
-                           <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Terminal Location</span>
-                           <p className="font-semibold text-gray-900 dark:text-white mt-0.5 flex items-center gap-2">
-                              <CheckCircle className="h-4 w-4 text-[var(--primary)]" />
-                              {selectedUser.terminal}
-                           </p>
-                        </div>
-                     </div>
-                     
-                     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-1">
-                        <div className="space-y-1">
-                           <div className="flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors">
-                              <div className="flex items-center gap-3">
-                                 <div className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg"><UserPlus className="h-4 w-4" /></div>
-                                 <div>
-                                    <p className="text-xs text-gray-500">Employee Codes</p>
-                                    <p className="text-sm font-semibold text-gray-900 dark:text-white font-mono">SM:{selectedUser.sm} • {selectedUser.empCode}</p>
-                                 </div>
+
+                  {/* RIGHT SIDE: Content Tabs */}
+                  <div className="flex-1 flex flex-col bg-white dark:bg-gray-900">
+                      {/* Tabs */}
+                      <div className="flex border-b border-gray-100 dark:border-gray-800 px-6">
+                          <button 
+                            onClick={() => setActiveTab('overview')}
+                            className={`px-6 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'overview' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                          >
+                              <UserIcon className="h-4 w-4" /> Overview
+                          </button>
+                          <button 
+                            onClick={() => setActiveTab('salary')}
+                            className={`px-6 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'salary' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                          >
+                              <Wallet className="h-4 w-4" /> Salary & Finance
+                          </button>
+                      </div>
+
+                      {/* Content Area */}
+                      <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-gray-50/50 dark:bg-gray-900">
+                          {activeTab === 'overview' && (
+                              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                                  <div className="grid grid-cols-2 gap-4">
+                                      <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                                          <div className="h-8 w-8 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center mb-2"><FileText className="h-4 w-4"/></div>
+                                          <p className="text-xs text-gray-400 font-bold uppercase">Iqama Number</p>
+                                          <p className="text-lg font-bold dark:text-white font-mono">{selectedUser.iqamaNumber || 'Not Set'}</p>
+                                      </div>
+                                      <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                                          <div className="h-8 w-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mb-2"><FileText className="h-4 w-4"/></div>
+                                          <p className="text-xs text-gray-400 font-bold uppercase">Passport Number</p>
+                                          <p className="text-lg font-bold dark:text-white font-mono">{selectedUser.passportNumber || 'Not Set'}</p>
+                                      </div>
+                                  </div>
+                                  <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                                      <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2"><CheckCircle className="h-4 w-4"/> Employment Status</h4>
+                                      <p className="text-sm text-blue-600 dark:text-blue-400">
+                                          This employee is currently <span className="font-bold">{selectedUser.status}</span> and assigned to the <span className="font-bold">{selectedUser.shift} Shift</span> at <span className="font-bold">{selectedUser.terminal}</span>.
+                                      </p>
+                                  </div>
                               </div>
-                           </div>
-                           <div className="flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors">
-                              <div className="flex items-center gap-3">
-                                 <div className="p-2 bg-green-50 dark:bg-green-900/20 text-green-600 rounded-lg"><CheckCircle className="h-4 w-4" /></div>
-                                 <div className="flex-1">
-                                    <p className="text-xs text-gray-500">Contact Info</p>
-                                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{selectedUser.mobile}</p>
-                                    <p className="text-xs text-gray-400">{selectedUser.email || 'No email provided'}</p>
-                                 </div>
+                          )}
+
+                          {activeTab === 'salary' && (
+                              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                                  {salaryLoading ? (
+                                      <div className="flex justify-center p-10"><Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]"/></div>
+                                  ) : !salaryData ? (
+                                      <div className="text-center p-10 text-gray-400">No Salary Data Available</div>
+                                  ) : (
+                                      <>
+                                          {/* Stats Cards */}
+                                          <div className="grid grid-cols-2 gap-4">
+                                              <div className="p-5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl text-white shadow-lg shadow-green-500/20">
+                                                  <p className="text-xs font-bold uppercase opacity-80 mb-1">Total Earnings</p>
+                                                  <p className="text-2xl font-black">{salaryData.stats.totalEarned.toLocaleString()} <span className="text-sm font-normal">SAR</span></p>
+                                              </div>
+                                              <div className="p-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                                                  <p className="text-xs font-bold text-gray-400 uppercase mb-1">Present Days</p>
+                                                  <p className="text-2xl font-black dark:text-white">{salaryData.stats.presentDays} <span className="text-sm font-normal text-gray-400">/ {salaryData.stats.totalDays}</span></p>
+                                              </div>
+                                          </div>
+
+                                          {/* Detailed Log */}
+                                          <div>
+                                              <h4 className="font-bold mb-3 flex items-center gap-2 dark:text-white"><List className="h-4 w-4"/> Payment History</h4>
+                                              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                                                  <div className="max-h-60 overflow-y-auto">
+                                                      <table className="w-full text-left text-sm">
+                                                          <thead className="bg-gray-50 dark:bg-gray-900/50 text-[10px] uppercase text-gray-500 font-bold sticky top-0">
+                                                              <tr>
+                                                                  <th className="px-4 py-3">Date</th>
+                                                                  <th className="px-4 py-3">Status</th>
+                                                                  <th className="px-4 py-3">Room</th>
+                                                                  <th className="px-4 py-3 text-right">Amount</th>
+                                                              </tr>
+                                                          </thead>
+                                                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                                              {salaryData.history.map((log, i) => (
+                                                                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                                      <td className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">{log.date.split('T')[0]}</td>
+                                                                      <td className="px-4 py-3">
+                                                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${['Present','On Duty'].includes(log.status) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                                              {log.status}
+                                                                          </span>
+                                                                      </td>
+                                                                      <td className="px-4 py-3 text-gray-500">{log.roomNumber}</td>
+                                                                      <td className="px-4 py-3 text-right font-bold font-mono dark:text-white">
+                                                                          {log.amount > 0 ? `+${log.amount}` : '-'}
+                                                                      </td>
+                                                                  </tr>
+                                                              ))}
+                                                              {salaryData.history.length === 0 && (
+                                                                  <tr><td colSpan="4" className="p-4 text-center text-gray-400 text-xs">No records found</td></tr>
+                                                              )}
+                                                          </tbody>
+                                                      </table>
+                                                  </div>
+                                              </div>
+                                          </div>
+                                      </>
+                                  )}
                               </div>
-                           </div>
-                           <div className="flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors">
-                              <div className="flex items-center gap-3">
-                                 <div className="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 rounded-lg"><FileText className="h-4 w-4" /></div>
-                                 <div>
-                                    <p className="text-xs text-gray-500">Documents</p>
-                                    <div className="flex gap-4">
-                                       <div>
-                                          <span className="text-[10px] text-gray-400 uppercase">Iqama</span>
-                                          <p className="text-sm font-semibold text-gray-900 dark:text-white font-mono">{selectedUser.iqamaNumber || '-'}</p>
-                                       </div>
-                                       <div>
-                                          <span className="text-[10px] text-gray-400 uppercase">Passport</span>
-                                          <p className="text-sm font-semibold text-gray-900 dark:text-white font-mono">{selectedUser.passportNumber || '-'}</p>
-                                       </div>
-                                    </div>
-                                 </div>
-                              </div>
-                           </div>
-                        </div>
-                     </div>
+                          )}
+                      </div>
                   </div>
                </div>
             </div>

@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Plus, Search, Edit2, Trash2, X, Users, Home, User, Check, Loader2, Save, Eye, Printer
+  Plus, Search, Edit2, Trash2, X, Users, Home, User, Check, Loader2, Save, Eye, Printer, AlertTriangle
 } from "lucide-react";
 import toast from 'react-hot-toast';
 
@@ -69,6 +69,7 @@ export default function RoomPage() {
           setEditMode(false);
           setCurrentRoom(null);
           setRoomNumber("");
+          // Auto-suggest next room number?
           setSelectedUserIds([]);
       }
       setIsModalOpen(true);
@@ -127,9 +128,58 @@ export default function RoomPage() {
       );
   };
 
+  // Logic to filter users who are ALREADY assigned to OTHER rooms
+  const getAssignedUserIds = () => {
+      const assigned = new Set();
+      rooms.forEach(r => {
+          // If we are editing, don't count the users in the current room as "assigned" (so they show up to be unselected/re-selected)
+          if (editMode && currentRoom && r._id === currentRoom._id) return;
+          r.users.forEach(u => assigned.add(u._id));
+      });
+      return assigned;
+  };
+
+  // Memoize assigned map for performance
+  const assignedUserMap = useMemo(() => {
+      const map = {}; // userId -> roomNumber
+      rooms.forEach(r => {
+          r.users.forEach(u => {
+              map[u._id] = r.roomNumber;
+          });
+      });
+      return map;
+  }, [rooms]);
+
+  const unassignedUsers = useMemo(() => {
+    return users.filter(u => !assignedUserMap[u._id]);
+  }, [users, assignedUserMap]);
+
+  // Sort Rooms Naturally (1, 2, 10 instead of 1, 10, 2)
+  const sortedRooms = useMemo(() => {
+    return [...rooms].sort((a, b) => 
+       a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [rooms]);
+
+  // Filter Display Rooms
+  const filteredRooms = sortedRooms.filter(r => 
+      r.roomNumber.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      r.users.some(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.empCode?.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  // Filter Users for Selection (Remove assigned users)
+  // This is used INSIDE the Modal
+  const assignedSetForModal = getAssignedUserIds();
+  const filteredUsersForSelect = users.filter(u => {
+      const matchesSearch = u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+                            u.empCode?.toLowerCase().includes(userSearch.toLowerCase());
+      const isNotAssignedOthers = !assignedSetForModal.has(u._id);
+      return matchesSearch && isNotAssignedOthers;
+  });
+
   const handlePrintAll = () => {
       setPrintMode('all');
-      setPrintData(filteredRooms); 
+      setPrintData({ rooms: sortedRooms, unassigned: unassignedUsers }); 
       setIsPreviewOpen(true);
   };
 
@@ -143,36 +193,6 @@ export default function RoomPage() {
       setTimeout(() => window.print(), 300);
   };
 
-  // Logic to filter users who are ALREADY assigned to OTHER rooms
-  const getAssignedUserIds = () => {
-      const assigned = new Set();
-      rooms.forEach(r => {
-          // If we are editing, don't count the users in the current room as "assigned" (so they show up to be unselected/re-selected)
-          if (editMode && currentRoom && r._id === currentRoom._id) return;
-          r.users.forEach(u => assigned.add(u._id));
-      });
-      return assigned;
-  };
-
-  const assignedUserIds = getAssignedUserIds();
-
-  // Filter Rooms for Display
-  const filteredRooms = rooms.filter(r => 
-      r.roomNumber.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      r.users.some(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.empCode?.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
-  // Filter Users for Selection (Remove assigned users)
-  const filteredUsersForSelect = users.filter(u => {
-      // 1. Must match search term
-      const matchesSearch = u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
-                            u.empCode?.toLowerCase().includes(userSearch.toLowerCase());
-      // 2. Must NOT be assigned to another room
-      const isNotAssignedOthers = !assignedUserIds.has(u._id);
-      
-      return matchesSearch && isNotAssignedOthers;
-  });
-
   return (
     <div className="space-y-6">
        {/* Header */}
@@ -185,7 +205,7 @@ export default function RoomPage() {
            </div>
            <div className="flex gap-2">
                <button onClick={handlePrintAll} className="bg-white dark:bg-gray-800 text-gray-700 dark:text-white border border-gray-200 dark:border-gray-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
-                   <Printer className="h-5 w-5" /> Print All
+                   <Printer className="h-5 w-5" /> Print Master List
                </button>
                {isAdmin && (
                    <button onClick={() => handleOpenModal()} className="bg-[var(--primary)] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-[var(--primary)]/90 transition-colors shadow-lg shadow-[var(--primary)]/30">
@@ -207,59 +227,114 @@ export default function RoomPage() {
            />
        </div>
 
-       {/* Loading */}
-       {loading ? (
-           <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[var(--primary)] h-8 w-8" /></div>
-       ) : (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-               {filteredRooms.map(room => (
-                   <div key={room._id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
-                       <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[var(--primary)]/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
-                       
-                       <div className="flex justify-between items-start mb-4 relative z-10">
-                           <div>
-                               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Room Number</p>
-                               <h3 className="text-3xl font-black text-gray-900 dark:text-white">{room.roomNumber}</h3>
-                           </div>
-                           <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                               <button onClick={() => handlePrintSingle(room)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-600 dark:text-gray-300" title="View/Print"><Eye className="h-4 w-4" /></button>
+       {/* Main Layout: Unassigned Sidebar + Rooms Grid */}
+       <div className="flex flex-col lg:flex-row gap-6">
+           
+           {/* Left Sidebar: Unassigned Employees */}
+           <div className="w-full lg:w-1/4 shrink-0 space-y-4 order-2 lg:order-1">
+               <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 p-4 rounded-2xl">
+                    <h3 className="font-bold text-yellow-800 dark:text-yellow-500 flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5"/> Unassigned Staff
+                    </h3>
+                    <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                        {unassignedUsers.length} employees are not in any room.
+                    </p>
+               </div>
+               
+               <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm max-h-[80vh] flex flex-col">
+                   <div className="p-4 border-b dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+                       <h4 className="font-bold text-sm text-gray-500 uppercase">Waiting List</h4>
+                   </div>
+                   <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
+                       {unassignedUsers.length > 0 ? unassignedUsers.map(u => (
+                           <div key={u._id} className="p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg flex items-center gap-2 group">
+                               <div className="h-6 w-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-bold">
+                                   {u.name?.[0]}
+                               </div>
+                               <div className="flex-1 min-w-0">
+                                   <p className="text-xs font-bold truncate dark:text-white">{u.name}</p>
+                                   <p className="text-[10px] text-gray-500">{u.empCode}</p>
+                               </div>
                                {isAdmin && (
-                                   <>
-                                       <button onClick={() => handleOpenModal(room)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-blue-600"><Edit2 className="h-4 w-4" /></button>
-                                       <button onClick={() => handleDelete(room._id)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-rose-600"><Trash2 className="h-4 w-4" /></button>
-                                   </>
+                                   <button 
+                                      onClick={() => {
+                                          setEditMode(false);
+                                          setSelectedUserIds([u._id]);
+                                          setIsModalOpen(true);
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 p-1 bg-[var(--primary)] text-white rounded shadow" 
+                                      title="Create Room"
+                                   >
+                                       <Plus className="h-3 w-3" />
+                                   </button>
                                )}
                            </div>
-                       </div>
-
-                       <div className="space-y-3">
-                           <div className="flex items-center gap-2 text-sm font-medium text-gray-500 border-b border-gray-100 dark:border-gray-800 pb-2">
-                               <Users className="h-4 w-4" /> 
-                               <span>Residents ({room.users.length})</span>
+                       )) : (
+                           <div className="p-6 text-center text-gray-400 text-xs italic">
+                               <Check className="h-6 w-6 mx-auto mb-2 text-green-500" />
+                               All staff assigned!
                            </div>
-                           
-                           {room.users.length > 0 ? (
-                               <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
-                                   {room.users.map(user => (
-                                       <div key={user._id} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-                                           <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                                               {user.name?.[0]}
-                                           </div>
-                                           <div className="flex-1 min-w-0">
-                                               <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{user.name}</p>
-                                               <p className="text-[10px] text-gray-500 font-mono">{user.empCode || "No ID"}</p>
-                                           </div>
-                                       </div>
-                                   ))}
-                               </div>
-                           ) : (
-                               <div className="text-center py-4 text-gray-400 text-sm italic">No user assigned</div>
-                           )}
-                       </div>
+                       )}
                    </div>
-               ))}
+               </div>
            </div>
-       )}
+
+           {/* Right Grid: Rooms */}
+           <div className="flex-1 order-1 lg:order-2">
+                {loading ? (
+                    <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[var(--primary)] h-8 w-8" /></div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        {filteredRooms.map(room => (
+                            <div key={room._id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[var(--primary)]/10 to-transparent rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                                
+                                <div className="flex justify-between items-start mb-4 relative z-10">
+                                    <div>
+                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Room Number</p>
+                                        <h3 className="text-3xl font-black text-gray-900 dark:text-white">{room.roomNumber}</h3>
+                                    </div>
+                                    <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => handlePrintSingle(room)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-600 dark:text-gray-300" title="View/Print"><Eye className="h-4 w-4" /></button>
+                                        {isAdmin && (
+                                            <>
+                                                <button onClick={() => handleOpenModal(room)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-blue-600"><Edit2 className="h-4 w-4" /></button>
+                                                <button onClick={() => handleDelete(room._id)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-sm font-medium text-gray-500 border-b border-gray-100 dark:border-gray-800 pb-2">
+                                        <Users className="h-4 w-4" /> 
+                                        <span>Residents ({room.users.length})</span>
+                                    </div>
+                                    
+                                    {room.users.length > 0 ? (
+                                        <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
+                                            {room.users.map(user => (
+                                                <div key={user._id} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+                                                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                                                        {user.name?.[0]}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{user.name}</p>
+                                                        <p className="text-[10px] text-gray-500 font-mono">{user.empCode || "No ID"}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-4 text-gray-400 text-sm italic">No user assigned</div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+           </div>
+       </div>
 
        {/* Create/Edit Modal */}
        <AnimatePresence>
@@ -354,7 +429,7 @@ export default function RoomPage() {
                             <button onClick={triggerPrint} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700"><Printer className="h-4 w-4" /> Print</button>
                         </div>
                         <div className="min-h-[500px]">
-                            {printMode === 'all' ? <PrintAllView rooms={printData} /> : <PrintSingleView room={printData} />}
+                            {printMode === 'all' ? <PrintAllView data={printData} /> : <PrintSingleView room={printData} />}
                         </div>
                     </div>
                </div>
@@ -364,7 +439,7 @@ export default function RoomPage() {
         {/* Hidden Print Area */}
         {isPreviewOpen && (
             <div className="hidden print:block fixed inset-0 bg-white z-[9999] p-8 text-black left-0 top-0 w-full h-full">
-                {printMode === 'all' ? <PrintAllView rooms={printData} /> : <PrintSingleView room={printData} />}
+                {printMode === 'all' ? <PrintAllView data={printData} /> : <PrintSingleView room={printData} />}
             </div>
         )}
 
@@ -373,8 +448,10 @@ export default function RoomPage() {
   );
 }
 
-function PrintAllView({ rooms }) {
-    if (!rooms) return null;
+function PrintAllView({ data }) {
+    if (!data) return null;
+    const { rooms, unassigned } = data;
+    
     return (
         <div className="w-full">
             <div className="text-center border-b-2 border-black pb-4 mb-6">
@@ -385,7 +462,7 @@ function PrintAllView({ rooms }) {
             
             <div className="grid grid-cols-4 gap-4">
                 {rooms.map((room, idx) => (
-                    <div key={idx} className="border-2 border-black p-3 break-inside-avoid shadow-sm rounded-lg flex flex-col h-full bg-white">
+                    <div key={idx} className="border-2 border-black p-3 break-inside-avoid shadow-sm rounded-lg flex flex-col bg-white">
                         <div className="flex justify-between items-center border-b-2 border-black pb-2 mb-2">
                             <h3 className="text-xl font-black">{room.roomNumber}</h3>
                             <span className="text-sm font-bold bg-black text-white px-2 py-0.5 rounded-full">{room.users.length} Occupants</span>
@@ -406,6 +483,24 @@ function PrintAllView({ rooms }) {
                         </div>
                     </div>
                 ))}
+
+                {/* Unassigned Section */}
+                 {unassigned && unassigned.length > 0 && (
+                    <div className="col-span-4 border-2 border-red-500 p-4 mt-4 break-inside-avoid shadow-sm rounded-lg bg-red-50">
+                        <div className="flex justify-between items-center border-b-2 border-red-500 pb-2 mb-2">
+                            <h3 className="text-xl font-black text-red-600 uppercase">Unassigned Personnel</h3>
+                             <span className="text-sm font-bold bg-red-600 text-white px-2 py-0.5 rounded-full">{unassigned.length} Pending</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                             {unassigned.map(u => (
+                                <div key={u._id} className="flex justify-between items-center text-xs p-1 bg-white border border-red-200 rounded">
+                                     <span className="font-bold truncate">{u.name}</span>
+                                     <span className="font-mono bg-gray-100 px-1 rounded">{u.empCode}</span>
+                                </div>
+                             ))}
+                        </div>
+                    </div>
+                 )}
             </div>
         </div>
     )

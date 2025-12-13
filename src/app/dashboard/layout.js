@@ -7,7 +7,7 @@ import { useSession, signOut } from "next-auth/react";
 import { 
   LayoutDashboard, Users, ShoppingCart, Filter, Settings, LogOut, Menu, X, Sun, Moon, Laptop,
   User, CalendarClock, Briefcase, FileText, MessageSquare, ClipboardList, Search, Bell, Home,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, DollarSign
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
@@ -43,10 +43,16 @@ export default function DashboardLayout({ children }) {
     }
 
     const { role } = session.user || {};
-    if (role !== 'Admin' && role !== 'Cashier') {
-        toast.error("Access Denied: Admin or Cashier only.");
-        router.push('/employees');
+    
+    // If role is 'User', redirect to homepage
+    if (role === 'User') {
+        router.push('/');
+        return;
     }
+
+    // Previous check for Admin/Cashier check is removed to allow Employee etc to dashboard
+    // if (role !== 'Admin' && role !== 'Cashier') { ... }
+
   }, [session, status, router]);
 
   // Links based on the user request
@@ -56,6 +62,7 @@ export default function DashboardLayout({ children }) {
     { href: "/dashboard/users", label: "User management", icon: Users },
     { href: "/dashboard/rooms", label: "Room Grouping", icon: Home },
     { href: "/dashboard/salary", label: "Salary management", icon: Briefcase },
+    { href: "/dashboard/salary/disbursement", label: "Salary Disbursement", icon: DollarSign }, // ADDED 
     { href: "/dashboard/money", label: "Money management", icon: Filter }, 
     { href: "/dashboard/trolley", label: "Total management", icon: ShoppingCart },
     { href: "/dashboard/profile", label: "Profile", icon: User },
@@ -66,8 +73,8 @@ export default function DashboardLayout({ children }) {
       return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950"><div className="animate-spin h-8 w-8 border-4 border-[var(--primary)] border-t-transparent rounded-full"></div></div>;
   }
 
-  // Prevent flash of content for unauthorized
-  if (!session || (session.user.role !== 'Admin' && session.user.role !== 'Cashier')) {
+  // Prevent flash of content for authorized
+  if (!session) {
       return null;
   }
 

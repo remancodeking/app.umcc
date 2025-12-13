@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Plane, Users, CheckCircle, Shield, ArrowRight, Star, TrendingUp, Clock, MapPin, Briefcase, LayoutDashboard, Sun, Moon, Laptop } from 'lucide-react';
+import { Plane, Users, CheckCircle, Shield, ArrowRight, Star, TrendingUp, Clock, MapPin, Briefcase, LayoutDashboard, Sun, Moon, Laptop, LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 function ModeToggle() {
@@ -64,13 +64,22 @@ export default function Home() {
             </div>
 
             {isLoggedIn ? (
-                <Link 
-                  href="/dashboard"
-                  className="hidden sm:inline-flex items-center justify-center rounded-xl text-sm font-bold bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 transition-all h-10 px-6 shadow-xl shadow-gray-900/10 dark:shadow-white/5 gap-2"
-                >
-                  <LayoutDashboard className="h-4 w-4" />
-                  Dashboard
-                </Link>
+                <div className="flex items-center gap-2">
+                    <Link 
+                      href="/dashboard"
+                      className="hidden sm:inline-flex items-center justify-center rounded-xl text-sm font-bold bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 transition-all h-10 px-6 shadow-xl shadow-gray-900/10 dark:shadow-white/5 gap-2"
+                    >
+                      <LayoutDashboard className="h-4 w-4" />
+                      Dashboard
+                    </Link>
+                    <button 
+                      onClick={() => signOut()}
+                      className="inline-flex items-center justify-center rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-all h-10 px-4"
+                      title="Sign Out"
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </button>
+                </div>
             ) : (
                 <>
                     <Link 

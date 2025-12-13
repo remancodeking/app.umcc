@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, Suspense } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LayoutDashboard, Loader2, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
@@ -32,7 +32,17 @@ function LoginForm() {
         setError('Invalid credentials');
         setLoading(false);
       } else {
-        router.push('/dashboard');
+        // Redirect Logic based on Role
+        const session = await getSession();
+        
+        // If role is strictly 'User', send to Landing Page
+        if (session?.user?.role === 'User') {
+            router.push('/');
+        } else {
+            // Admin, Cashier, Employee -> Dashboard
+            // (Assumes Admin/Cashier/Employee all use the main dashboard now)
+            router.push('/dashboard');
+        }
         router.refresh();
       }
     } catch (error) {
