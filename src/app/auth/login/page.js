@@ -34,13 +34,13 @@ function LoginForm() {
       } else {
         // Redirect Logic based on Role
         const session = await getSession();
-        
-        // If role is strictly 'User', send to Landing Page
-        if (session?.user?.role === 'User') {
+        const role = session?.user?.role;
+
+        if (role === 'User') {
             router.push('/');
+        } else if (role === 'Employee') {
+            router.push('/employee');
         } else {
-            // Admin, Cashier, Employee -> Dashboard
-            // (Assumes Admin/Cashier/Employee all use the main dashboard now)
             router.push('/dashboard');
         }
         router.refresh();

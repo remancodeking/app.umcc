@@ -16,7 +16,8 @@ export async function GET(req, { params }) {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id: userId } = params;
+    // Await params to fix Next.js 15 issue
+    const { id: userId } = await params;
 
     // 1. Fetch Salary History (Finalized Reports)
     // We look for reports where 'records.user' matches the userId

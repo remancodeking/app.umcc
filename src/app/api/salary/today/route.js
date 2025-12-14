@@ -5,9 +5,7 @@ import mongoose from "mongoose";
 import User from "@/models/User";
 import Attendance from "@/models/Attendance";
 import SalesReport from "@/models/SalesReport";
-// Ensure Room is registered/imported if you have a separate model file, 
-// though sometimes just relying on mongoose.model works if already loaded. 
-// Safer to import.
+// Ensure Room is registered/imported if you have a separate model file
 import Room from "@/models/Room"; 
 
 const connectDB = async () => {
@@ -25,18 +23,17 @@ export async function GET(req) {
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
 
     // 1. Fetch All Rooms (Primary grouping source)
-    // Populate users to know who belongs where
     const rooms = await Room.find().populate({
       path: 'users',
       select: 'name empCode designation role status'
     }).sort({ roomNumber: 1 });
 
     // 2. Fetch All active Employees (The Master List)
-    // We fetch this efficiently to ensure we catch everyone, even those not in a room yet.
+    // Included 'shift' in selection
     const allUsers = await User.find({ 
         role: { $in: ['Employee', 'Admin', 'Cashier'] }, 
         status: 'In Work' 
-    }).select('name empCode designation role status');
+    }).select('name empCode designation role status shift');
 
     // 3. Fetch Attendance for Date
     const attendance = await Attendance.find({ date });
@@ -48,23 +45,18 @@ export async function GET(req) {
     const recommendedRevenue = sales?.distribution?.laborAmount || 0;
 
     // --- MAPPING LOGIC ---
-    // Create a map of UserID -> RoomNumber from the fetched Rooms
     const userRoomMap = {};
     rooms.forEach(room => {
         if(room.users && room.users.length > 0) {
             room.users.forEach(u => {
-                // Determine user ID (it might be an object if populated, or string if not)
                 const uid = u._id ? u._id.toString() : u.toString();
                 userRoomMap[uid] = room.roomNumber;
             });
         }
     });
 
-    // Combined Data: List of ALL employees, now with 'roomNumber' attached
     const combinedData = allUsers.map(u => {
         const userId = u._id.toString();
-        // Determine status (use attendance if exists, otherwise assume Absent/Pending)
-        // If "Present" or "On Duty", they are eligible for pay typically.
         const status = attendanceMap[userId] || 'Absent'; 
         
         return {
@@ -73,22 +65,21 @@ export async function GET(req) {
             empCode: u.empCode,
             designation: u.designation,
             status: status,
-            roomNumber: userRoomMap[userId] || 'Unassigned' // <--- The Key Fix
+            shift: u.shift, // Pass shift to frontend
+            roomNumber: userRoomMap[userId] || 'Unassigned'
         };
     });
 
-    // Sort by Room Number (Numeric if possible) then Name
+    // Sort by Room Number then Name
     combinedData.sort((a, b) => {
         if(a.roomNumber === 'Unassigned') return 1; 
         if(b.roomNumber === 'Unassigned') return -1;
         
-        // Try numeric sort for rooms "1", "2", "10"
         const rA = parseInt(a.roomNumber);
         const rB = parseInt(b.roomNumber);
         if(!isNaN(rA) && !isNaN(rB)) {
             if (rA !== rB) return rA - rB;
         } else {
-            // String sort fallback
             if (a.roomNumber !== b.roomNumber) return a.roomNumber.localeCompare(b.roomNumber);
         }
         return a.name.localeCompare(b.name);

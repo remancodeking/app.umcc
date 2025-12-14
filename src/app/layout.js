@@ -14,15 +14,21 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+import OfflineHandler from "@/components/OfflineHandler";
+import InstallPrompt from "@/components/InstallPrompt";
+
 export const metadata = {
   title: "UMCC - Sharakat Al Harak",
   description: "Premier Airport Logistics & Trolley Services",
+  manifest: "/manifest.json",
   icons: {
     icon: '/logo.jpg',
     shortcut: '/logo.jpg',
     apple: '/logo.jpg',
   },
 };
+
+import { InstallProvider } from "@/components/providers/InstallProvider";
 
 export default function RootLayout({ children }) {
   return (
@@ -38,8 +44,12 @@ export default function RootLayout({ children }) {
             enableSystem
             disableTransitionOnChange
           >
-            {children}
-            <Toaster position="top-center" reverseOrder={false} />
+            <InstallProvider>
+                {children}
+                <OfflineHandler />
+                <InstallPrompt />
+                <Toaster position="top-center" reverseOrder={false} />
+            </InstallProvider>
           </ThemeProvider>
         </SessionProvider>
       </body>

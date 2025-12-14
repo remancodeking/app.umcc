@@ -36,6 +36,7 @@ export const authOptions = {
             name: user.name,
             email: user.email,
             role: user.role,
+            shift: user.shift, // Added shift
           };
         }
 
@@ -58,6 +59,7 @@ export const authOptions = {
             name: user.name,
             email: user.email,
             role: user.role,
+            shift: user.shift, // Added shift
           };
         }
 
@@ -70,6 +72,7 @@ export const authOptions = {
       if (user) {
         token.role = user.role;
         token.id = user.id;
+        token.shift = user.shift; // Added shift
       }
       return token;
     },
@@ -77,6 +80,7 @@ export const authOptions = {
       if (session?.user) {
         session.user.role = token.role;
         session.user.id = token.id;
+        session.user.shift = token.shift; // Added shift
       }
       return session;
     },

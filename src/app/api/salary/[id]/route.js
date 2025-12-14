@@ -9,6 +9,32 @@ const connectDB = async () => {
   await mongoose.connect(process.env.MONGODB_URI);
 };
 
+export async function PUT(req, { params }) {
+    try {
+        await connectDB();
+        const session = await getServerSession(authOptions);
+        if (!session || session.user.role !== 'Admin') {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+        }
+
+        const { id } = await params;
+        const body = await req.json();
+
+        // Remove _id from body to prevent immutable field error
+        delete body._id;
+
+        const updated = await SalaryReport.findByIdAndUpdate(id, body, { new: true });
+
+        if (!updated) {
+            return NextResponse.json({ error: "Report not found" }, { status: 404 });
+        }
+
+        return NextResponse.json(updated);
+    } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
 export async function DELETE(req, { params }) {
   try {
     await connectDB();
@@ -17,7 +43,7 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ error: "Unauthorized: Admins only" }, { status: 403 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const deleted = await SalaryReport.findByIdAndDelete(id);
 
     if (!deleted) {

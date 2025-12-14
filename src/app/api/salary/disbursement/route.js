@@ -17,20 +17,48 @@ export async function GET(req) {
         // Extract 'date' from query params
         const { searchParams } = new URL(req.url);
         const dateQuery = searchParams.get('date');
+        const shiftQuery = searchParams.get('shift');
 
         let report;
         if (dateQuery) {
-            report = await SalaryReport.findOne({ date: dateQuery, status: 'Finalized' });
+            report = await SalaryReport.findOne({ date: dateQuery, status: 'Finalized' }).populate('records.user', 'shift name');
         } else {
             // Default to latest
-            report = await SalaryReport.findOne({ status: 'Finalized' }).sort({ date: -1 });
+            report = await SalaryReport.findOne({ status: 'Finalized' }).sort({ date: -1 }).populate('records.user', 'shift name');
         }
 
         if (!report) return NextResponse.json(null);
 
         // Group records to prepare "Disbursement View"
         const rooms = {};
-        report.records.forEach(r => {
+        
+        // Apply Shift Filtering to records
+        const filteredRecords = report.records.filter(r => {
+             // If no shift query (Admin 'All'), show everything
+             if (!shiftQuery || shiftQuery === 'All') return true;
+             
+             // 1. Snapshot Strict Match: If record has a saved shift, use it.
+             if (r.shift) return r.shift === shiftQuery;
+
+             // 2. Live Data Fallback: If snapshot missing, check likely live user shift
+             // (r.user might be null if user deleted, handle safely)
+             if (r.user && r.user.shift) {
+                 return r.user.shift === shiftQuery;
+             }
+             
+             // 3. Last Resort Fallback: If neither exist, assume report team (Legacy Report Logic)
+             // Only if report has explicit team.
+             if (report.team === shiftQuery) return true;
+             
+             // 4. Last Resort Fallback: If Rec Shift Missing AND User Shift Missing AND Report Team Missing
+             // User prefers "Strict", so let's HIDE if we can't prove it belongs to them.
+             // With Step 2 (Live User Shift), we should catch almost everyone since Users have shifts now.
+             // So we can arguably be strict here.
+             
+             return false;
+        });
+
+        filteredRecords.forEach(r => {
             const rNum = r.roomNumber || 'Unassigned';
             if(!rooms[rNum]) rooms[rNum] = { 
                 roomNumber: rNum, 
@@ -116,6 +144,7 @@ export async function POST(req) {
         return NextResponse.json({ success: true, receiptId, date: new Date(), receiverName: receiver.name });
 
     } catch (error) {
+        
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

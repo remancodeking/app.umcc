@@ -270,7 +270,7 @@ export default function Home() {
                     <Link href="/auth/signup" className="w-full sm:w-auto px-8 py-4 bg-[#D4AF37] hover:bg-[#c4a02e] text-white font-bold rounded-xl transition-colors">
                        Get Started Now
                     </Link>
-                    <Link href="/auth/employee/login" className="w-full sm:w-auto px-8 py-4 bg-white/10 hover:bg-white/20 backdrop-blur text-white dark:text-gray-900 dark:bg-gray-100 dark:hover:bg-gray-200 font-bold rounded-xl transition-colors">
+                    <Link href="/auth/login" className="w-full sm:w-auto px-8 py-4 bg-white/10 hover:bg-white/20 backdrop-blur text-white dark:text-gray-900 dark:bg-gray-100 dark:hover:bg-gray-200 font-bold rounded-xl transition-colors">
                        Employee Portal
                     </Link>
                  </div>

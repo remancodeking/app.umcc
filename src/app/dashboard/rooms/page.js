@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 export default function RoomPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === 'Admin' || session?.user?.role === 'Cashier';
+  const userShift = session?.user?.shift; // Shift: 'A', 'B', etc.
 
   const [rooms, setRooms] = useState([]);
   const [users, setUsers] = useState([]); // All available users
@@ -151,8 +152,15 @@ export default function RoomPage() {
   }, [rooms]);
 
   const unassignedUsers = useMemo(() => {
-    return users.filter(u => !assignedUserMap[u._id]);
-  }, [users, assignedUserMap]);
+    return users.filter(u => {
+        // 1. Must not be assigned to a room
+        const isUnassigned = !assignedUserMap[u._id];
+        // 2. Must match the shift if filtering is active
+        const matchesShift = (!userShift || userShift === 'All') ? true : u.shift === userShift;
+        
+        return isUnassigned && matchesShift;
+    });
+  }, [users, assignedUserMap, userShift]);
 
   // Sort Rooms Naturally (1, 2, 10 instead of 1, 10, 2)
   const sortedRooms = useMemo(() => {
@@ -162,10 +170,33 @@ export default function RoomPage() {
   }, [rooms]);
 
   // Filter Display Rooms
-  const filteredRooms = sortedRooms.filter(r => 
-      r.roomNumber.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      r.users.some(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.empCode?.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // IMPORTANT: Filter users INSIDE the rooms too if shift is active
+  const filteredRooms = sortedRooms.map(room => {
+      // Filter the users inside the room
+      const roomUsers = room.users.filter(u => (!userShift || userShift === 'All') ? true : u.shift === userShift);
+      
+      return {
+          ...room,
+          displayUsers: roomUsers // Use this property for display
+      };
+  }).filter(r => {
+      // Show room if:
+      // 1. It matches search term
+      // 2. OR it contains users matching search term (and shift)
+      // 3. AND (Implicitly) it has users of the current shift (Optional: Do we show empty rooms? User said "apply only the shift's name")
+      // Let's show empty rooms if they match search, but the user list inside will be filtered.
+      
+      const search = searchTerm.toLowerCase();
+      const matchesRoom = r.roomNumber.toLowerCase().includes(search);
+      const matchesUsers = r.displayUsers.some(u => u.name.toLowerCase().includes(search) || u.empCode?.toLowerCase().includes(search));
+      
+      // If Shift Filter is ON, maybe only show rooms that contain at least one shift member?
+      // Or show all rooms but empty content? 
+      // "it is okay to apply only the ship's name, that is, the person inside the ship"
+      // Suggests we show the room, but only list the shift's people.
+      
+      return matchesRoom || matchesUsers;
+  });
 
   // Filter Users for Selection (Remove assigned users)
   // This is used INSIDE the Modal
@@ -174,12 +205,16 @@ export default function RoomPage() {
       const matchesSearch = u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
                             u.empCode?.toLowerCase().includes(userSearch.toLowerCase());
       const isNotAssignedOthers = !assignedSetForModal.has(u._id);
-      return matchesSearch && isNotAssignedOthers;
+      
+      // Filter by Shift in Modal too
+      const matchesShift = (!userShift || userShift === 'All') ? true : u.shift === userShift;
+
+      return matchesSearch && isNotAssignedOthers && matchesShift;
   });
 
   const handlePrintAll = () => {
       setPrintMode('all');
-      setPrintData({ rooms: sortedRooms, unassigned: unassignedUsers }); 
+      setPrintData({ rooms: filteredRooms, unassigned: unassignedUsers }); 
       setIsPreviewOpen(true);
   };
 
@@ -203,7 +238,15 @@ export default function RoomPage() {
                </h2>
                <p className="text-gray-500 text-sm">Manage employee accommodation and room assignments.</p>
            </div>
+           
            <div className="flex gap-2">
+                 {/* Shift Indicator */}
+                 {userShift && userShift !== 'All' && (
+                       <div className="bg-blue-100 text-blue-700 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
+                            <Users className="h-4 w-4" /> Shift {userShift} View
+                       </div>
+                 )}
+
                <button onClick={handlePrintAll} className="bg-white dark:bg-gray-800 text-gray-700 dark:text-white border border-gray-200 dark:border-gray-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
                    <Printer className="h-5 w-5" /> Print Master List
                </button>
@@ -237,7 +280,7 @@ export default function RoomPage() {
                         <AlertTriangle className="h-5 w-5"/> Unassigned Staff
                     </h3>
                     <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                        {unassignedUsers.length} employees are not in any room.
+                        {unassignedUsers.length} employees {userShift && userShift !== 'All' ? `(Shift ${userShift})` : ''} are not in any room.
                     </p>
                </div>
                
@@ -308,12 +351,12 @@ export default function RoomPage() {
                                 <div className="space-y-3">
                                     <div className="flex items-center gap-2 text-sm font-medium text-gray-500 border-b border-gray-100 dark:border-gray-800 pb-2">
                                         <Users className="h-4 w-4" /> 
-                                        <span>Residents ({room.users.length})</span>
+                                        <span>Residents ({room.displayUsers.length})</span>
                                     </div>
                                     
-                                    {room.users.length > 0 ? (
+                                    {room.displayUsers.length > 0 ? (
                                         <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
-                                            {room.users.map(user => (
+                                            {room.displayUsers.map(user => (
                                                 <div key={user._id} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
                                                     <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
                                                         {user.name?.[0]}
@@ -326,7 +369,9 @@ export default function RoomPage() {
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="text-center py-4 text-gray-400 text-sm italic">No user assigned</div>
+                                        <div className="text-center py-4 text-gray-400 text-sm italic">
+                                            {userShift ? `No Shift ${userShift} users` : "No users assigned"}
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -465,12 +510,12 @@ function PrintAllView({ data }) {
                     <div key={idx} className="border-2 border-black p-3 break-inside-avoid shadow-sm rounded-lg flex flex-col bg-white">
                         <div className="flex justify-between items-center border-b-2 border-black pb-2 mb-2">
                             <h3 className="text-xl font-black">{room.roomNumber}</h3>
-                            <span className="text-sm font-bold bg-black text-white px-2 py-0.5 rounded-full">{room.users.length} Occupants</span>
+                            <span className="text-sm font-bold bg-black text-white px-2 py-0.5 rounded-full">{room.displayUsers?.length || 0} Occupants</span>
                         </div>
                         <div className="flex-1">
-                            {room.users.length > 0 ? (
+                            {room.displayUsers && room.displayUsers.length > 0 ? (
                                 <ul className="space-y-1.5">
-                                    {room.users.map(u => (
+                                    {room.displayUsers.map(u => (
                                         <li key={u._id} className="flex justify-between items-center text-xs">
                                             <span className="font-bold truncate max-w-[70%] uppercase">{u.name}</span>
                                             <span className="font-mono bg-gray-100 px-1 rounded">{u.empCode}</span>
@@ -478,7 +523,7 @@ function PrintAllView({ data }) {
                                     ))}
                                 </ul>
                             ) : (
-                                <p className="text-center text-gray-400 italic text-xs py-4">VACANT</p>
+                                <p className="text-center text-gray-400 italic text-xs py-4">VACANT / SHIFT FILTER</p>
                             )}
                         </div>
                     </div>
@@ -508,6 +553,8 @@ function PrintAllView({ data }) {
 
 function PrintSingleView({ room }) {
     if(!room) return null;
+    const usersToDisplay = room.displayUsers || room.users || [];
+    
     return (
         <div className="w-full max-w-2xl mx-auto border-2 border-black p-8 min-h-[800px]">
              <div className="text-center border-b-2 border-black pb-4 mb-8">
@@ -522,7 +569,7 @@ function PrintSingleView({ room }) {
                 </div>
                 <div className="text-right">
                     <p className="text-sm text-gray-500 uppercase font-bold">Total Residents</p>
-                    <p className="text-4xl font-bold">{room.users.length}</p>
+                    <p className="text-4xl font-bold">{usersToDisplay.length}</p>
                 </div>
             </div>
 
@@ -537,7 +584,7 @@ function PrintSingleView({ room }) {
                     </tr>
                 </thead>
                 <tbody>
-                    {room.users.map((u, i) => (
+                    {usersToDisplay.map((u, i) => (
                         <tr key={u._id} className="border-b border-gray-200">
                             <td className="py-3 font-bold text-gray-500">{i+1}</td>
                             <td className="py-3 font-bold uppercase">{u.name}</td>
@@ -547,9 +594,9 @@ function PrintSingleView({ room }) {
                             </td>
                         </tr>
                     ))}
-                    {Array.from({ length: Math.max(0, 8 - room.users.length) }).map((_, i) => (
+                    {Array.from({ length: Math.max(0, 8 - usersToDisplay.length) }).map((_, i) => (
                         <tr key={`empty-${i}`} className="border-b border-dashed border-gray-200">
-                             <td className="py-3 text-gray-200">{room.users.length + i + 1}</td>
+                             <td className="py-3 text-gray-200">{usersToDisplay.length + i + 1}</td>
                              <td className="py-3 text-gray-300 italic">Verify Vacancy</td>
                              <td className="py-3"></td>
                              <td className="py-3"></td>

@@ -114,3 +114,71 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide non-printable elements globally if tagged */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Force block display for printable areas */
+  .print\:block {
+    display: block !important;
+  }
+
+  /* Clean up cards for print */
+  .print\:border-gray-300 {
+    border-color: #d1d5db !important;
+    border-width: 1px !important;
+  }
+
+  /* Remove shadows and rounded corners for crisper print */
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+
+  /* Avoid breaking elements inside tables or charts */
+  .print\:break-inside-avoid {
+    break-inside: avoid !important;
+  }
+
+  /* Ensure text is dark and readable */
+  .text-gray-900, .dark .text-white {
+    color: #000 !important;
+  }
+  
+  .text-gray-500, .dark .text-gray-400 {
+    color: #4b5563 !important;
+  }
+
+  /* Table Specifics */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  
+  th, td {
+    border-bottom: 1px solid #e5e7eb !important;
+    padding: 8px 12px !important;
+  }
+  
+  thead {
+    display: table-header-group !important;
+  }
+  
+  tr {
+    break-inside: avoid !important;
+  }
+}

@@ -7,6 +7,7 @@ const SalaryReportSchema = new mongoose.Schema(
     totalPresent: { type: Number, required: true },
     perHead: { type: Number, required: true },
     surplus: { type: Number, default: 0 },
+    team: { type: String }, // 'A' or 'B'. If null -> Global/Legacy
     
     records: [
       {
@@ -14,6 +15,7 @@ const SalaryReportSchema = new mongoose.Schema(
         name: { type: String },
         empCode: { type: String },
         status: { type: String }, // Present, Absent, etc.
+        shift: { type: String }, // Added shift field
         roomNumber: { type: String }, // Store Room Number for grouping
         baseAmount: { type: Number, default: 0 },
         deductions: [

@@ -9,8 +9,10 @@ import toast from 'react-hot-toast';
 export default function AttendancePage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === 'Admin' || session?.user?.role === 'Ground Operation Manager' || session?.user?.role === 'Supervisor';
+  const userShift = session?.user?.shift; // Get User Shift from Session
 
   const [activeTab, setActiveTab] = useState("all"); 
+  const [selectedShift, setSelectedShift] = useState("All"); 
   const [currentTime, setCurrentTime] = useState(new Date());
   
   // Data States
@@ -25,7 +27,7 @@ export default function AttendancePage() {
   
   // Confirm Modal State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState(null); // { type: 'complete', title, message }
+  const [confirmAction, setConfirmAction] = useState(null); 
 
   // Reports
   const [reportSessions, setReportSessions] = useState([]);
@@ -36,6 +38,14 @@ export default function AttendancePage() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Enforce Shift Restriction
+  useEffect(() => {
+      if (userShift && ['A', 'B', 'C'].includes(userShift)) {
+          setSelectedShift(userShift);
+      }
+  }, [userShift]);
+
 
   // Fetch Data
   const fetchData = async (date = null) => {
@@ -87,8 +97,6 @@ export default function AttendancePage() {
         if(activeTab === 'reports') {
             fetchReports();
         } else {
-            // If switching back from reports to daily view, maybe reset to today?
-            // For now, let's keep it simple. Initial load fetches today.
             if(activeTab !== 'reports' && !selectedDate) fetchData();
         }
     }
@@ -222,11 +230,15 @@ export default function AttendancePage() {
   if (isAdmin) {
     const todayStr = selectedDate ? new Date(selectedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     
-    // Filter Data
+    // Filter Data Logic
     const filteredData = adminData.filter(user => {
        const userLower = user.name.toLowerCase();
        const searchLower = searchTerm.toLowerCase();
+       // Shift Matching Logic
+       const matchesShift = selectedShift === 'All' || user.shift === selectedShift;
+
        return (userLower.includes(searchLower) || user.empCode?.toLowerCase().includes(searchLower)) && 
+              matchesShift &&
               (activeTab === 'all' || 
                (activeTab === 'p' && (user.status === 'Present' || user.status === 'On Duty')) ||
                (activeTab === 'l' && user.status === 'Late') ||
@@ -235,12 +247,15 @@ export default function AttendancePage() {
     });
 
     const stats = {
-       total: adminData.length,
-       present: adminData.filter(u => u.status === 'Present' || u.status === 'On Duty').length,
-       late: adminData.filter(u => u.status === 'Late').length,
-       absent: adminData.filter(u => u.status === 'Absent').length,
-       pending: adminData.filter(u => u.status === 'Pending').length,
+       total: filteredData.length,
+       present: filteredData.filter(u => u.status === 'Present' || u.status === 'On Duty').length,
+       late: filteredData.filter(u => u.status === 'Late').length,
+       absent: filteredData.filter(u => u.status === 'Absent').length,
+       pending: filteredData.filter(u => u.status === 'Pending').length,
     };
+    
+    // Determine if user is restricted to a specific shift
+    const isShiftRestricted = userShift && ['A', 'B', 'C'].includes(userShift);
 
     return (
        <div className="space-y-6">
@@ -255,12 +270,34 @@ export default function AttendancePage() {
                    }`}>
                       Session: {sessionStatus}
                    </span>
+                   {isShiftRestricted && (
+                        <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-blue-100 text-blue-700">
+                             My Shift: {userShift}
+                        </span>
+                   )}
                    <p className="text-sm text-gray-500">{todayStr}</p>
                 </div>
              </div>
              
              {/* Action Buttons */}
              <div className="flex flex-wrap items-center gap-2">
+                 
+                 {/* Shift Selector - Hidden if Restricted */}
+                 {!isShiftRestricted && (
+                    <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                        {['All', 'A', 'B', 'C'].map(shift => (
+                            <button
+                                key={shift}
+                                onClick={() => setSelectedShift(shift)}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${selectedShift === shift ? 'bg-white dark:bg-gray-700 shadow-sm text-black dark:text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                {shift === 'All' ? 'All Shifts' : `Shift ${shift}`}
+                            </button>
+                        ))}
+                    </div>
+                 )}
+                <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 mx-2 hidden md:block"></div>
+
                 {activeTab !== 'reports' && (
                     <>
                         {sessionStatus !== 'Open' && sessionStatus !== 'Closed' && (

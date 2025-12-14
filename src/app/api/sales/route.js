@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import dbConnect from '@/lib/db';
 import SalesReport from '@/models/SalesReport';
+import { CloudCog } from 'lucide-react';
 
 export async function GET(request) {
   try {
@@ -11,8 +12,21 @@ export async function GET(request) {
 
     await dbConnect();
     
+    // Filter by Shift (Team)
+    const query = {};
+    if (session.user.shift && session.user.shift !== 'All') {
+        const userShift = session.user.shift;
+        // Strict Match: Team matches user shift OR Legacy (team is null/missing)
+        // This ensures historical data is not hidden.
+        query.$or = [
+            { team: userShift },
+            { team: null },
+            { team: { $exists: false } }
+        ];
+    }
+    
     // Sort by date desc
-    const reports = await SalesReport.find({}).sort({ date: -1, createdAt: -1 }).limit(50).populate('submittedBy', 'name');
+    const reports = await SalesReport.find(query).sort({ date: -1, createdAt: -1 }).limit(50).populate('submittedBy', 'name');
     
     return NextResponse.json(reports);
   } catch (error) {
@@ -27,10 +41,13 @@ export async function POST(request) {
 
     await dbConnect();
     const body = await request.json();
+    
+    const team = (session.user.shift && session.user.shift !== 'All') ? session.user.shift : null;
 
     const newReport = await SalesReport.create({
       ...body,
-      submittedBy: session.user.id
+      submittedBy: session.user.id,
+      team: team
     });
 
     return NextResponse.json(newReport);

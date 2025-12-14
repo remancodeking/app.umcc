@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { 
   Briefcase, History, Calculator, Users, DollarSign, 
   Calendar, CheckCircle, AlertCircle, Scissors, X, Save, Printer, Eye,
-  FileText, ScrollText, Trash2
+  FileText, ScrollText, Trash2, Pencil
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SalarySlipsView from "@/components/salary/SalarySlipsView";
@@ -13,7 +13,11 @@ import { useSession } from "next-auth/react";
 
 export default function SalaryManagementPage() {
   const { data: session } = useSession();
-  const isAdmin = session?.user?.role === 'Admin';
+  
+  // Robust Role Check (Case-insensitive)
+  const role = session?.user?.role;
+  const userShift = session?.user?.shift; // Shift: 'A', 'B', or string
+  const isAdmin = ['admin', 'ground operation manager', 'supervisor'].includes(role?.toLowerCase());
   
   const [activeTab, setActiveTab] = useState("history"); // 'history' | 'manage' | 'sheets'
   const [loading, setLoading] = useState(true);
@@ -29,6 +33,9 @@ export default function SalaryManagementPage() {
   const [revenue, setRevenue] = useState(0);
   const [perHeadRate, setPerHeadRate] = useState(0); 
   
+  // Edit Mode State
+  const [editingReportId, setEditingReportId] = useState(null);
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
@@ -38,7 +45,8 @@ export default function SalaryManagementPage() {
   useEffect(() => { fetchHistory(); }, []);
 
   useEffect(() => {
-    if (activeTab === 'manage') fetchTodayData();
+    // Only fetch today's data if we are NOT editing an old report
+    if (activeTab === 'manage' && !editingReportId) fetchTodayData();
   }, [activeTab, todayDate]);
 
   const fetchHistory = async () => {
@@ -62,6 +70,29 @@ export default function SalaryManagementPage() {
       } catch(e) { toast.error("Error deleting"); }
   };
 
+  const handleEdit = (report) => {
+      if(employees.length > 0 && !editingReportId && !confirm("Unsaved changes in calculator will be lost. Load validation report?")) return;
+      
+      setEditingReportId(report._id);
+      setTodayDate(report.date);
+      setRevenue(report.totalRevenue);
+      
+      // Map records back to employee format for Calculator
+      const mappedEmployees = report.records.map(r => ({
+            _id: r.user, // User ID
+            name: r.name,
+            empCode: r.empCode,
+            status: r.status,
+            shift: r.shift,
+            deductions: r.deductions || [],
+            roomNumber: r.roomNumber
+      }));
+      
+      setEmployees(mappedEmployees);
+      setActiveTab('manage');
+      toast.success("Report loaded for editing");
+  };
+
   const fetchTodayData = async () => {
       setLoading(true);
       try {
@@ -81,19 +112,25 @@ export default function SalaryManagementPage() {
   };
 
   // --- Calculations ---
-  const presentEmployees = employees.filter(e => ['Present', 'On Duty'].includes(e.status));
-  const presentCount = presentEmployees.length;
+  // Apply Shift Filtering Logic
+  const filteredEmployees = employees.filter(e => {
+        if (!userShift || userShift === 'All') return true;
+        return e.shift === userShift;
+  });
 
+  const presentEmployeesAll = employees.filter(e => ['Present', 'On Duty'].includes(e.status));
+  const presentCountAll = presentEmployeesAll.length;
+  
   useEffect(() => {
-      if (presentCount > 0) {
-          const raw = revenue / presentCount;
+      if (presentCountAll > 0) {
+          const raw = revenue / presentCountAll;
           setPerHeadRate(Math.floor(raw)); 
       } else {
           setPerHeadRate(0);
       }
-  }, [revenue, presentCount]);
+  }, [revenue, presentCountAll]);
 
-  const surplus = (revenue - (perHeadRate * presentCount));
+  const surplus = (revenue - (perHeadRate * presentCountAll));
 
   const openDeductionModal = (emp) => {
       setSelectedEmployee(emp);
@@ -123,9 +160,6 @@ export default function SalaryManagementPage() {
       if (!selectedEmployee) return;
       setDeductionReason("Full Salary Cut");
       setDeductionAmount(perHeadRate.toString());
-      // Logic will proceed when user clicks 'Apply' or we can auto-apply:
-      // Let's auto-fill and let user confirm or we can do it in one go.
-      // User requested "click the full cut the full salary". Let's do it directly.
       
       setEmployees(prev => prev.map(e => {
           if (e._id === selectedEmployee._id) {
@@ -152,15 +186,16 @@ export default function SalaryManagementPage() {
   };
 
   const handleFinalize = async () => {
+      const action = editingReportId ? "Update" : "Finalize";
       const confirmed = window.confirm(
-          `Are you sure you want to finalize this Salary Sheet?\n\nTotal Revenue: ${revenue}\nPaid Employees: ${presentCount}\nPer Head: ${perHeadRate}`
+          `Are you sure you want to ${action} this Salary Sheet?\n\nTotal Revenue: ${revenue}\nPaid Employees: ${presentCountAll}\nPer Head: ${perHeadRate}`
       );
       if (!confirmed) return;
 
       const payload = {
           date: todayDate,
           totalRevenue: revenue,
-          totalPresent: presentCount,
+          totalPresent: presentCountAll,
           perHead: perHeadRate,
           surplus: Number(surplus.toFixed(2)),
           records: employees.map(e => {
@@ -172,25 +207,36 @@ export default function SalaryManagementPage() {
                   name: e.name,
                   empCode: e.empCode,
                   status: e.status,
+                  shift: e.shift,
                   baseAmount: base,
                   deductions: e.deductions,
                   finalAmount: Math.max(0, base - totalDeductions),
-                  roomNumber: e.roomNumber // Pass room number
+                  roomNumber: e.roomNumber
               };
           }),
           status: 'Finalized'
       };
 
       try {
-          const res = await fetch('/api/salary', {
-              method: 'POST',
-              headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify(payload)
-          });
+          let res;
+          if (editingReportId) {
+              res = await fetch(`/api/salary/${editingReportId}`, {
+                  method: 'PUT',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify(payload)
+              });
+          } else {
+              res = await fetch('/api/salary', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify(payload)
+              });
+          }
           
           if (res.ok) {
-              toast.success("Saved Successfully!");
+              toast.success(editingReportId ? "Updated Successfully!" : "Saved Successfully!");
               fetchHistory();
+              setEditingReportId(null);
               setActiveTab('history');
           } else {
               toast.error("Failed to save report");
@@ -218,8 +264,8 @@ export default function SalaryManagementPage() {
            </div>
            
            <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
-               <button onClick={() => setActiveTab('history')} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'history' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><History className="h-4 w-4" /> History</button>
-               <button onClick={() => setActiveTab('sheets')} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'sheets' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><ScrollText className="h-4 w-4" /> Notebook</button>
+               <button onClick={() => { setActiveTab('history'); setEditingReportId(null); }} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'history' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><History className="h-4 w-4" /> History</button>
+               <button onClick={() => { setActiveTab('sheets'); setEditingReportId(null); }} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'sheets' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><ScrollText className="h-4 w-4" /> Notebook</button>
                <button onClick={() => setActiveTab('manage')} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'manage' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><Calculator className="h-4 w-4" /> Calculator</button>
            </div>
        </div>
@@ -227,34 +273,67 @@ export default function SalaryManagementPage() {
        {/* HISTORY TAB */}
        {activeTab === 'history' && (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 print:hidden">
-               {historyReports.map(report => (
-                   <div key={report._id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group relative">
-                       {isAdmin && (
-                           <button 
-                               onClick={() => deleteReport(report._id)}
-                               className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all"
-                               title="Delete Report"
-                           >
-                               <Trash2 className="h-4 w-4" />
-                           </button>
-                       )}
-                       <div className="flex justify-between items-start mb-4">
-                           <div className="flex items-center gap-2 text-gray-500 font-medium"><Calendar className="h-4 w-4" />{report.date}</div>
-                           <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full uppercase">{report.status}</span>
+               {historyReports.map(report => {
+                   // Calculate filter counts for display
+                   let displayPaidCount = report.totalPresent;
+                   if (userShift && userShift !== 'All') {
+                       displayPaidCount = report.records.filter(r => r.shift === userShift && ['Present','On Duty'].includes(r.status)).length;
+                   }
+
+                   return (
+                   <div key={report._id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group relative flex flex-col justify-between">
+                       <div>
+                           <div className="flex justify-between items-start mb-4">
+                               <div className="flex items-center gap-2 text-gray-500 font-medium"><Calendar className="h-4 w-4" />{report.date}</div>
+                               <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full uppercase">{report.status}</span>
+                           </div>
+                           
+                           {/* Admin Actions moved to avoid overlap with status/content */}
+                           {isAdmin && (
+                               <div className="absolute top-16 right-4 flex flex-col gap-2 z-10 transition-all opacity-80 hover:opacity-100">
+                                   <button 
+                                       onClick={() => handleEdit(report)}
+                                       className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shadow-sm border border-blue-100"
+                                       title="Edit Report"
+                                   >
+                                       <Pencil className="h-4 w-4" />
+                                   </button>
+                                   <button 
+                                       onClick={() => deleteReport(report._id)}
+                                       className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors shadow-sm border border-red-100"
+                                       title="Delete Report"
+                                   >
+                                       <Trash2 className="h-4 w-4" />
+                                   </button>
+                               </div>
+                           )}
+
+                           <div className="space-y-4">
+                               <div><p className="text-sm text-gray-500">Revenue</p><p className="text-2xl font-black dark:text-white">SAR {Number(report.totalRevenue).toLocaleString()}</p></div>
+                               <div className="grid grid-cols-2 gap-4">
+                                   <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"><p className="text-[10px] text-gray-500 font-bold uppercase">Per Head</p><p className="text-lg font-bold text-[var(--primary)] dark:text-white">{report.perHead}</p></div>
+                                   <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-xl"><p className="text-[10px] text-green-600 font-bold uppercase">Surplus</p><p className="text-lg font-bold text-green-700 dark:text-green-300">{Number(report.surplus).toFixed(2)}</p></div>
+                               </div>
+                           </div>
                        </div>
-                       <div className="space-y-4">
-                           <div><p className="text-sm text-gray-500">Revenue</p><p className="text-2xl font-black dark:text-white">SAR {Number(report.totalRevenue).toLocaleString()}</p></div>
-                           <div className="grid grid-cols-2 gap-4">
-                               <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"><p className="text-[10px] text-gray-500 font-bold uppercase">Per Head</p><p className="text-lg font-bold text-[var(--primary)] dark:text-white">{report.perHead}</p></div>
-                               <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-xl"><p className="text-[10px] text-green-600 font-bold uppercase">Surplus</p><p className="text-lg font-bold text-green-700 dark:text-green-300">{Number(report.surplus).toFixed(2)}</p></div>
+                       
+                       {/* Footer - Separated Layout */}
+                       <div className="pt-4 mt-2 border-t dark:border-gray-800 flex justify-between items-center">
+                           <div className="flex items-center gap-2">
+                              <Users className="h-4 w-4 text-gray-500" />
+                              <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
+                                 {displayPaidCount} Paid {userShift && userShift !== 'All' ? `(${userShift})` : ''}
+                              </span>
                            </div>
-                           <div className="pt-4 border-t dark:border-gray-800 flex justify-between">
-                               <span className="text-xs font-bold text-gray-500 flex items-center gap-1"><Users className="h-3 w-3" /> {report.totalPresent} Paid</span>
-                               <button onClick={() => setViewReport(report)} className="flex items-center gap-2 bg-black text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:scale-105 transition-transform"><Eye className="h-3 w-3" /> Slips</button>
-                           </div>
+                           <button 
+                               onClick={() => setViewReport(report)} 
+                               className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-transform"
+                           >
+                               <Eye className="h-3 w-3" /> Slips
+                           </button>
                        </div>
                    </div>
-               ))}
+               )})}
            </div>
        )}
        
@@ -302,6 +381,23 @@ export default function SalaryManagementPage() {
        {/* MANAGE (CALCULATOR) TAB */}
        {activeTab === 'manage' && (
            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 print:hidden">
+               {editingReportId && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 mb-4 rounded-r shadow-sm flex justify-between items-center">
+                         <div>
+                            <p className="text-amber-800 dark:text-amber-200 font-bold flex items-center gap-2"><Pencil className="h-4 w-4"/> Editing Mode</p>
+                            <p className="text-xs text-amber-700 dark:text-amber-300">You are enforcing updates on an existing finalized report ({todayDate}).</p>
+                         </div>
+                         <button onClick={() => { setEditingReportId(null); fetchTodayData(); }} className="px-3 py-1 bg-white hover:bg-gray-100 text-amber-600 text-xs font-bold rounded shadow-sm border border-amber-200">Cancel Edit</button>
+                    </div>
+               )}
+               
+               {userShift && userShift !== 'All' && (
+                   <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r shadow-sm">
+                        <p className="text-blue-800 font-bold">Shift Filter Active: {userShift}</p>
+                        <p className="text-xs text-blue-600">You are viewing only employees in your shift.</p>
+                   </div>
+               )}
+
                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
                        <div className="space-y-2">
@@ -309,7 +405,7 @@ export default function SalaryManagementPage() {
                            <input type="number" value={revenue} onChange={(e) => setRevenue(parseFloat(e.target.value) || 0)} className="w-full p-4 bg-gray-50 dark:bg-gray-800 border-none rounded-xl text-3xl font-black dark:text-white focus:ring-2 focus:ring-[var(--primary)] outline-none" />
                        </div>
                        <div className="flex gap-4">
-                           <div className="flex-1 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl"><div className="flex items-center gap-2 mb-1 text-blue-600"><Users className="h-4 w-4" /><span className="text-[10px] font-bold uppercase">Present</span></div><p className="text-2xl font-black text-blue-700 dark:text-blue-300">{presentCount}</p></div>
+                           <div className="flex-1 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl"><div className="flex items-center gap-2 mb-1 text-blue-600"><Users className="h-4 w-4" /><span className="text-[10px] font-bold uppercase">Present (All)</span></div><p className="text-2xl font-black text-blue-700 dark:text-blue-300">{presentCountAll}</p></div>
                            <div className="flex-1 space-y-1"><label className="text-[10px] font-bold text-gray-400 uppercase">Per Head</label><input type="number" value={perHeadRate} onChange={(e) => setPerHeadRate(parseFloat(e.target.value) || 0)} className="w-full p-2 bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-lg text-xl font-bold outline-none focus:border-[var(--primary)]" /></div>
                        </div>
                        <div className="p-4 bg-green-50 dark:bg-green-900/10 rounded-xl"><span className="text-[10px] font-bold text-green-600 uppercase flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Surplus</span><p className="text-3xl font-black text-green-600 dark:text-green-400">SAR {surplus.toFixed(2)}</p></div>
@@ -318,16 +414,16 @@ export default function SalaryManagementPage() {
 
                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
                    <div className="p-4 border-b dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-                       <h3 className="font-bold">Employee List</h3>
+                       <h3 className="font-bold">Employee List {userShift && userShift !== 'All' ? `(${userShift})` : ''}</h3>
                        <div className="flex gap-2"><input type="date" value={todayDate} onChange={(e) => setTodayDate(e.target.value)} className="bg-transparent font-bold text-sm outline-none dark:text-white" /></div>
                    </div>
                    <div className="overflow-x-auto">
                        <table className="w-full text-left">
                            <thead className="bg-gray-50 dark:bg-gray-800 text-[10px] text-gray-500 uppercase font-bold">
-                               <tr><th className="px-6 py-3">Details</th><th className="px-6 py-3">Room</th><th className="px-6 py-3">Status</th><th className="px-6 py-3">Rate</th><th className="px-6 py-3">Deductions</th><th className="px-6 py-3 text-right sticky right-0 bg-white dark:bg-gray-800 shadow-xl">Net</th><th className="px-6 py-3 text-center">Action</th></tr>
+                               <tr><th className="px-6 py-3">Details</th><th className="px-6 py-3">Room</th><th className="px-6 py-3">Status</th><th className="px-6 py-3">Shift</th><th className="px-6 py-3">Rate</th><th className="px-6 py-3">Deductions</th><th className="px-6 py-3 text-right sticky right-0 bg-white dark:bg-gray-800 shadow-xl">Net</th><th className="px-6 py-3 text-center">Action</th></tr>
                            </thead>
                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
-                               {employees.map(emp => {
+                               {filteredEmployees.map(emp => {
                                    const isPresent = ['Present', 'On Duty'].includes(emp.status);
                                    const totalDeductions = emp.deductions.reduce((sum, d) => sum + d.amount, 0);
                                    const netAmount = isPresent ? Math.max(0, perHeadRate - totalDeductions) : 0;
@@ -336,6 +432,7 @@ export default function SalaryManagementPage() {
                                            <td className="px-6 py-3"><p className="font-bold dark:text-white">{emp.name}</p><p className="text-xs text-gray-400">{emp.empCode}</p></td>
                                            <td className="px-6 py-3"><span className="font-bold bg-black text-white px-2 py-1 rounded text-xs">{emp.roomNumber || 'N/A'}</span></td>
                                            <td className="px-6 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${isPresent ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>{emp.status}</span></td>
+                                           <td className="px-6 py-3"><span className="text-xs font-bold text-gray-500">{emp.shift || '-'}</span></td>
                                            <td className="px-6 py-3 font-mono font-bold text-gray-500">{isPresent ? perHeadRate : '-'}</td>
                                            <td className="px-6 py-3 flex flex-wrap gap-1">{emp.deductions.map((d,i)=><span key={i} className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded flex items-center gap-1">{d.amount}<X onClick={()=>removeDeduction(emp._id, i)} className="h-3 w-3 cursor-pointer hover:scale-125" /></span>)}</td>
                                            <td className="px-6 py-3 text-right font-black text-lg dark:text-white sticky right-0 bg-white dark:bg-gray-900 border-l border-gray-100 dark:border-gray-800 shadow-[inset_10px_0_10px_-10px_rgba(0,0,0,0.05)]">{isPresent ? netAmount : '-'}</td>
@@ -347,7 +444,9 @@ export default function SalaryManagementPage() {
                        </table>
                    </div>
                    <div className="p-4 border-t dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex justify-end">
-                       <button onClick={handleFinalize} className="px-6 py-3 bg-gray-900 text-white dark:bg-white dark:text-gray-900 font-bold rounded-xl shadow-lg flex items-center gap-2 hover:-translate-y-1 transition-transform"><Save className="h-4 w-4" /> Finalize</button>
+                       <button onClick={handleFinalize} className="px-6 py-3 bg-gray-900 text-white dark:bg-white dark:text-gray-900 font-bold rounded-xl shadow-lg flex items-center gap-2 hover:-translate-y-1 transition-transform">
+                           <Save className="h-4 w-4" /> {editingReportId ? "Update Report" : "Finalize Sheet"}
+                       </button>
                    </div>
                </div>
            </div>
@@ -362,7 +461,6 @@ export default function SalaryManagementPage() {
                        <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Reason</label><div className="flex gap-2">{['Fine','Recovery','Advance'].map(r=><button key={r} onClick={()=>setDeductionReason(r)} className={`px-2 py-1 text-xs font-bold border rounded ${deductionReason===r?'bg-black text-white':'text-gray-500'}`}>{r}</button>)}</div></div>
                        <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Amount</label><input type="number" autoFocus value={deductionAmount} onChange={(e)=>setDeductionAmount(e.target.value)} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-bold text-xl outline-none focus:ring-2 focus:ring-[var(--primary)]" placeholder="0" /></div>
                        
-                       {/* Full Cut Button Added Here */}
                         <button onClick={applyFullCut} className="w-full py-2 bg-red-100 text-red-600 font-bold rounded-xl hover:bg-red-200 transition-colors uppercase text-xs flex items-center justify-center gap-2">
                              <AlertCircle className="h-4 w-4" /> Full Salary Cut (Set to 0)
                         </button>

@@ -3,7 +3,9 @@ import mongoose from "mongoose";
 const SalesReportSchema = new mongoose.Schema(
   {
     date: { type: String, required: true }, // YYYY-MM-DD
-    shift: { type: String, enum: ["Day", "Night"], required: true },
+    shift: { type: String, enum: ["Day", "Night", "24 Hours"], required: true },
+    team: { type: String }, // 'A', 'B', etc.
+    distributionType: { type: String, enum: ["Standard", "Equal"], default: "Standard" }, // Standard = Shift based, Equal = 50/50
     submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     
     // --- CASH SALES (Left Column) ---
