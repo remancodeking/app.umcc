@@ -13,74 +13,75 @@ export const authOptions = {
       id: 'credentials',
       name: 'Credentials',
       credentials: {
-        mobile: { label: 'Mobile', type: 'text' },
-        password: { label: 'Password', type: 'password' },
         iqamaNumber: { label: 'Iqama Number', type: 'text' },
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
         await dbConnect();
 
-        // 1. Employee Login (Iqama + Mobile) - No Password required as per prompt specs for login
-        if (credentials.iqamaNumber && credentials.mobile && !credentials.password) {
-          const user = await User.findOne({
-            iqamaNumber: credentials.iqamaNumber,
-            mobile: credentials.mobile,
-          });
+        const loginId = (credentials.iqamaNumber || '').trim();
+        const password = (credentials.password || '').trim();
 
-          if (!user) {
-            throw new Error('Invalid Credentials');
-          }
-
-          return {
-            id: user._id.toString(),
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            shift: user.shift, // Added shift
-          };
+        if (!loginId || !password) {
+             throw new Error('Please provide Login ID and Password');
         }
 
-        // 2. User Login (Mobile + Password)
-        if (credentials.mobile && credentials.password) {
-          const user = await User.findOne({ mobile: credentials.mobile });
+        // Allow login with Iqama, Mobile, or SM Number
+        // The frontend sends the input in the 'iqamaNumber' field
+        const user = await User.findOne({
+            $or: [
+                { iqamaNumber: loginId },
+                { mobile: loginId },
+                { sm: loginId },
+                { email: loginId }
+            ]
+        });
 
-          if (!user) {
-            throw new Error('User not found');
-          }
-
-          const isValid = await bcrypt.compare(credentials.password, user.password);
-
-          if (!isValid) {
-            throw new Error('Invalid password');
-          }
-
-          return {
-            id: user._id.toString(),
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            shift: user.shift, // Added shift
-          };
+        if (!user) {
+          throw new Error('User not found');
         }
 
-        throw new Error('Invalid credentials');
+        const isValid = await bcrypt.compare(password, user.password);
+
+        if (!isValid) {
+            throw new Error('Invalid Password');
+        }
+
+        return {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          shift: user.shift,
+          isOnboarding: user.isOnboarding, // Pass onboarding status
+        };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.role = user.role;
         token.id = user.id;
-        token.shift = user.shift; // Added shift
+        token.shift = user.shift;
+        token.isOnboarding = user.isOnboarding;
       }
+      
+      // Allow updating session from client side (e.g. after password change)
+      if (trigger === "update" && session) {
+          if (session.user.isOnboarding !== undefined) token.isOnboarding = session.user.isOnboarding;
+          if (session.user.name) token.name = session.user.name;
+          if (session.user.email) token.email = session.user.email;
+      }
+      
       return token;
     },
     async session({ session, token }) {
       if (session?.user) {
         session.user.role = token.role;
         session.user.id = token.id;
-        session.user.shift = token.shift; // Added shift
+        session.user.shift = token.shift;
+        session.user.isOnboarding = token.isOnboarding;
       }
       return session;
     },

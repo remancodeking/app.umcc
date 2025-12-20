@@ -13,8 +13,8 @@ const UserSchema = new mongoose.Schema(
     },
     mobile: {
       type: String,
-      required: [true, 'Please provide a mobile number'],
       unique: true,
+      sparse: true,
     },
     password: {
       type: String,
@@ -22,8 +22,8 @@ const UserSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['Admin', 'Cashier', 'Employee', 'User'],
-      default: 'User',
+      enum: ['Admin', 'Cashier', 'Employee'], // Removed 'User'
+      default: 'Employee',
     },
     // User specific
     nationalId: {
@@ -35,10 +35,12 @@ const UserSchema = new mongoose.Schema(
     iqamaNumber: {
       type: String, // Also serves as SA ID Card (10 numbers)
       unique: true,
-      sparse: true,
+      required: [true, 'Please provide an Iqama/ID number'], // Made required
     },
     sm: {
       type: String,
+      unique: true,
+      sparse: true,
     },
     empCode: {
       type: String,
@@ -47,7 +49,7 @@ const UserSchema = new mongoose.Schema(
     },
     designation: {
       type: String,
-      enum: ['Porter', 'Team Leader', 'Supervisor', 'Ground Operation Manager'],
+      enum: ['Porter', 'Team Leader', 'Supervisor', 'Ground Operation Manager', 'GID', 'Hotel Incharge', 'Cashier', 'Operation Manager', 'Transport Incharge'],
     },
     passportNumber: {
       type: String,
@@ -55,6 +57,10 @@ const UserSchema = new mongoose.Schema(
     shift: {
       type: String,
       enum: ['A', 'B'],
+    },
+    isOnboarding: { // Added field to track if password change is needed
+        type: Boolean,
+        default: true
     },
     status: {
       type: String,
@@ -78,5 +84,12 @@ const UserSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Force re-compile model in dev to pick up enum changes without restart
+if (process.env.NODE_ENV === 'development') {
+  if (mongoose.models.User) {
+    delete mongoose.models.User;
+  }
+}
 
 export default mongoose.models.User || mongoose.model('User', UserSchema);

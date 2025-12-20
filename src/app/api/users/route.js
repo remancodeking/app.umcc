@@ -17,38 +17,100 @@ export async function POST(req) {
   await dbConnect();
   try {
     const body = await req.json();
-    const { name, mobile, password, sm, empCode, designation, role, shift, iqamaNumber, passportNumber, email, status, terminal } = body;
+    const { name, mobile, role, shift, iqamaNumber, empCode, designation, passportNumber, email, status, terminal } = body;
 
-    // Basic validation
-    if (!mobile || !password || !name) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    // 1. Validation (Iqama is now the primary key)
+    if (!iqamaNumber || !name || !role) {
+      return NextResponse.json({ error: 'Name, Role, and Iqama Number are required' }, { status: 400 });
     }
 
-    // Check if user exists
+    // 2. Uniqueness Check
     const existingUser = await User.findOne({ 
-      $or: [{ mobile }, { empCode: empCode || 'non-existent' }, { nationalId: iqamaNumber || 'non-existent' }] 
+      $or: [
+        { iqamaNumber: iqamaNumber },
+        { empCode: empCode || 'non-existent-code' },
+        ...(mobile ? [{ mobile }] : [])
+      ] 
     });
     
     if (existingUser) {
-      return NextResponse.json({ error: 'User with this Mobile, EmpCode, or ID already exists' }, { status: 400 });
+        if(existingUser.iqamaNumber === iqamaNumber) return NextResponse.json({ error: 'Iqama Number already exists' }, { status: 400 });
+        if(existingUser.empCode === empCode) return NextResponse.json({ error: 'Employee Code already exists' }, { status: 400 });
+        if(mobile && existingUser.mobile === mobile) return NextResponse.json({ error: 'Mobile Number already exists' }, { status: 400 });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 3. Auto-Generate SM Number (Robust with Jitter)
+    let nextSM = '';
+    let isUnique = false;
+    let attempts = 0;
+
+    while (!isUnique && attempts < 10) { 
+        // Small random delay to desynchronize parallel requests
+        if (attempts > 0) {
+            await new Promise(resolve => setTimeout(resolve, Math.random() * 200)); 
+        }
+
+        const lastUser = await User.findOne({ sm: { $regex: /^SM-\d+$/ } }).sort({ createdAt: -1 });
+        let nextNum = 1001;
+        
+        if (lastUser && lastUser.sm) {
+            const currentNum = parseInt(lastUser.sm.split("-")[1]);
+            if (!isNaN(currentNum)) {
+                // If retrying, try jumping ahead slightly to avoid the immediate next collision
+                nextNum = currentNum + 1 + (attempts > 0 ? attempts : 0);
+            }
+        }
+        nextSM = `SM-${nextNum}`;
+        
+        // Double check availability
+        const check = await User.findOne({ sm: nextSM });
+        if (!check) {
+             isUnique = true;
+        }
+        attempts++;
+    }
+    
+    // Fallback: If still not unique after 10 tries, use timestamp
+    if (!isUnique) {
+        nextSM = `SM-${Date.now().toString().slice(-4)}`;
+    }
+
+    // 4. Default Password Logic (Set to Iqama Number)
+    const hashedPassword = await bcrypt.hash(iqamaNumber, 10);
+
+    // Sanitize designation:
+    let finalDesignation = designation ? designation.replace(/\r?\n|\r/g, ' ').trim() : 'Porter';
+    
+    // Explicitly nullify optional sparse unique fields if they are empty strings
+    const safeEmpCode = empCode && String(empCode).trim() !== "" ? empCode : undefined;
+    const safeMobile = mobile && String(mobile).trim() !== "" ? mobile : undefined;
+    const safeEmail = email && String(email).trim() !== "" ? email : undefined;
+
+    const VALID_DESIGNATIONS = [
+        'Porter', 'Team Leader', 'Supervisor', 'Ground Operation Manager', 'GID', 
+        'Hotel Incharge', 'Cashier', 'Operation Manager', 'Transport Incharge'
+    ];
+
+    const match = VALID_DESIGNATIONS.find(d => d.toLowerCase() === finalDesignation.toLowerCase());
+    if (match) {
+        finalDesignation = match;
+    }
 
     const newUser = await User.create({
       name,
-      mobile,
-      email,
+      mobile: safeMobile,
+      email: safeEmail,
       password: hashedPassword,
       role: role || 'Employee',
-      sm,
-      empCode,
-      designation,
+      sm: nextSM,
+      empCode: safeEmpCode,
+      designation: finalDesignation,
       shift,
       iqamaNumber, 
       passportNumber,
-      status,
-      terminal
+      status: status || 'In Work',
+      terminal,
+      isOnboarding: true // Force password change on first login
     });
 
     return NextResponse.json(newUser, { status: 201 });
@@ -62,9 +124,29 @@ export async function PUT(req) {
   await dbConnect();
   try {
     const body = await req.json();
-    const { id, ...updateData } = body;
+    
+    // Bulk Update Logic
+    if (body.ids && Array.isArray(body.ids)) {
+        const { ids, ...data } = body;
+        
+        // Hash password if present (rare in bulk, but possible)
+        if (data.password) {
+             data.password = await bcrypt.hash(data.password, 10);
+        } else {
+             delete data.password;
+        }
 
-    if (!id) return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+        const result = await User.updateMany(
+            { _id: { $in: ids } },
+            { $set: data }
+        );
+        
+        return NextResponse.json({ message: `Updated ${result.modifiedCount} users` });
+    }
+
+    // Single Update Logic
+    const { id, ...updateData } = body;
+    if (!id) return NextResponse.json({ error: 'User ID or IDs array is required' }, { status: 400 });
 
     // If password is being updated, hash it
     if (updateData.password) {
@@ -88,15 +170,30 @@ export async function DELETE(req) {
   await dbConnect();
   try {
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
+    const idParam = searchParams.get('id');
+    const deleteAll = searchParams.get('all');
 
-    if (!id) return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+    // 1. Delete All Users (Protect Admin)
+    if (deleteAll === 'true') {
+        const result = await User.deleteMany({ role: { $ne: 'Admin' } }); // Safety: Don't delete Admins
+        return NextResponse.json({ message: `Deleted ${result.deletedCount} users (Admins protected).` });
+    }
 
-    const deletedUser = await User.findByIdAndDelete(id);
+    // 2. Delete Selected (One or Many)
+    if (idParam) {
+        const ids = idParam.split(',');
+        if (ids.length === 1) {
+             const deletedUser = await User.findByIdAndDelete(ids[0]);
+             if (!deletedUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+             return NextResponse.json({ message: 'User deleted successfully' });
+        } else {
+             const result = await User.deleteMany({ _id: { $in: ids } });
+             return NextResponse.json({ message: `Deleted ${result.deletedCount} users.` });
+        }
+    }
 
-    if (!deletedUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    return NextResponse.json({ error: 'User ID(s) or all=true param required' }, { status: 400 });
 
-    return NextResponse.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error("Delete User Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

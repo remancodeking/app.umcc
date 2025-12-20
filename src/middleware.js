@@ -1,23 +1,35 @@
-import { NextResponse } from 'next/server'
+import { withAuth } from "next-auth/middleware";
+import { NextResponse } from "next/server";
 
-export function middleware(request) {
-  // 1. موجودہ راستہ (Path) دیکھیں
-  const path = request.nextUrl.pathname
+export default withAuth(
+  function middleware(req) {
+    const token = req.nextauth.token;
+    const path = req.nextUrl.pathname;
 
-  // 2. ٹوکن (Token) چیک کریں (یوزر لاگ ان ہے یا نہیں)
-  // Vercel پر کوکی کا نام __Secure- سے شروع ہوتا ہے
-  const token = request.cookies.get('next-auth.session-token')?.value || 
-                request.cookies.get('__Secure-next-auth.session-token')?.value
+    // 1. If not logged in, 'withAuth' handles redirect to login automatically.
+    
+    // 2. Role Based Access Control
+    const userRole = token?.role;
 
-  // 3. اگر یوزر ڈیش بورڈ پر جانے کی کوشش کرے اور ٹوکن نہ ہو
-  if (path.startsWith('/dashboard') && !token) {
-    // تو اسے واپس لاگ ان پیج پر بھیج دیں
-    return NextResponse.redirect(new URL('/auth/login', request.url))
+    // Admin & Cashier -> Allow access to /dashboard
+    // Others (Employee, etc) -> Redirect to /employee (or restricts from /dashboard)
+    
+    // If trying to access /dashboard and NOT Admin or Cashier
+    if (path.startsWith("/dashboard") && userRole !== "Admin" && userRole !== "Cashier") {
+       // Redirect unauthorized roles to a dedicated employee page or home
+       return NextResponse.redirect(new URL("/employee", req.url));
+    }
+
+    // Allow access
+    return NextResponse.next();
+  },
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token, // Ensure user is authenticated first
+    },
   }
+);
 
-  // 4. باقی سب ٹھیک ہے، جانے دیں
-  return NextResponse.next()
-}
-
-// یہ مڈل ویئر صرف ڈیش بورڈ کے راستوں پر چلے گا
-export const config = { matcher: ["/dashboard/:path*"] }
+export const config = { 
+  matcher: ["/dashboard/:path*", "/employee/:path*"] 
+};

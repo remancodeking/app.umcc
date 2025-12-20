@@ -4,8 +4,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from 'next-themes';
-import { Plane, Users, CheckCircle, Shield, ArrowRight, Star, TrendingUp, Clock, MapPin, Briefcase, LayoutDashboard, Sun, Moon, Laptop, LogOut } from 'lucide-react';
+import { Plane, Users, CheckCircle, Shield, ArrowRight, Star, TrendingUp, Clock, MapPin, Briefcase, LayoutDashboard, Sun, Moon, Laptop, LogOut, Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useInstall } from "@/components/providers/InstallProvider";
 
 function ModeToggle() {
   const { setTheme } = useTheme();
@@ -26,6 +27,7 @@ function ModeToggle() {
 export default function Home() {
   const { data: session, status } = useSession();
   const isLoggedIn = status === 'authenticated';
+  const { deferredPrompt, promptInstall, isStandalone } = useInstall();
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-amber-500/30">
@@ -59,6 +61,16 @@ export default function Home() {
           </nav>
 
           <div className="flex items-center gap-3">
+            {/* Install Button for Desktop/Android */}
+            {deferredPrompt && !isStandalone && (
+                <button 
+                  onClick={promptInstall}
+                  className="hidden sm:inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-bold rounded-lg hover:opacity-80 transition-all mr-2"
+                >
+                   <Download className="h-3.5 w-3.5" /> Install App
+                </button>
+            )}
+
             <div className="hidden sm:block mr-2">
                 <ModeToggle />
             </div>

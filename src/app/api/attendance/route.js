@@ -22,15 +22,9 @@ export async function GET(req) {
 
     if (!date) return NextResponse.json({ error: "Date required" }, { status: 400 });
 
-    // Fetch all employees
-    const users = await User.find({ role: "Employee" }).select("name role empCode mobile");
+    // Fetch all users (sorted)
+    const users = await User.find({ role: { $ne: 'Admin' } }).sort({ name: 1 }).select("name role empCode mobile designation shift terminal");
 
-    // Fetch attendance records for this date (and shift if provided)
-    // If shift is provided, strictly filter? Or just show all for the day?
-    // User said "cannot create double shapes", suggesting singular shift per day arguably?
-    // But usually attendance is per day. However, shift 'A', 'B' could exist.
-    // Let's filter by date.
-    
     const query = { date };
     if (shift && shift !== 'All') {
         query.shift = shift;
@@ -69,26 +63,44 @@ export async function POST(req) {
         if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
         const body = await req.json();
-        const { userId, date, status, shift, notes } = body;
+        const { userId, userIds, date, status, shift, notes } = body;
 
-        // Check if record exists for this User + Date
-        // User said: "you cannot create double shapes", so update if exists
-        
+        // BULK UPDATE
+        if (userIds && Array.isArray(userIds)) {
+             const operations = userIds.map(uid => ({
+                updateOne: {
+                    filter: { user: uid, date: date },
+                    update: { 
+                        $set: { 
+                            status: status, 
+                            shift: shift || 'A',
+                            notes: notes || '',
+                            // Only set clockIn if strictly marking Present and it wasn't there? 
+                            // Or just simplify. Let's simplify.
+                            updatedAt: new Date()
+                        }
+                    },
+                    upsert: true
+                }
+            }));
+            await Attendance.bulkWrite(operations);
+            return NextResponse.json({ success: true, count: userIds.length });
+        }
+
+        // SINGLE UPDATE
         let record = await Attendance.findOne({ user: userId, date });
 
         if (record) {
-            // Update
             record.status = status;
-            record.shift = shift;
-            record.notes = notes;
+            if(shift) record.shift = shift;
+            if(notes !== undefined) record.notes = notes;
             await record.save();
         } else {
-            // Create
             record = await Attendance.create({
                 user: userId,
                 date,
                 status,
-                shift,
+                shift: shift || 'A',
                 notes,
                 clockIn: status === 'Present' ? new Date() : null
             });
@@ -98,5 +110,30 @@ export async function POST(req) {
 
     } catch (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+export async function DELETE(req) {
+    try {
+        await connectDB();
+        const session = await getServerSession(authOptions);
+        if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+        const { searchParams } = new URL(req.url);
+        const date = searchParams.get('date');
+        const ids = searchParams.get('ids'); 
+
+        if (!date || !ids) return NextResponse.json({ error: "Date and IDs required" }, { status: 400 });
+
+        const userIds = ids.split(',');
+        const result = await Attendance.deleteMany({
+            date: date,
+            user: { $in: userIds }
+        });
+
+        return NextResponse.json({ message: "Deleted successfully", count: result.deletedCount });
+
+    } catch (error) {
+         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

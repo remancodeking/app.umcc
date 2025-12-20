@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mobile, setMobile] = useState('');
+  const [iqamaNumber, setIqamaNumber] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,7 +24,7 @@ function LoginForm() {
     try {
       const res = await signIn('credentials', {
         redirect: false,
-        mobile,
+        iqamaNumber,
         password,
       });
 
@@ -32,13 +32,16 @@ function LoginForm() {
         setError('Invalid credentials');
         setLoading(false);
       } else {
-        // Redirect Logic based on Role
         const session = await getSession();
+        // Check for onboarding status
+        if(session?.user?.isOnboarding) {
+             router.push('/auth/onboarding');
+             return;
+        }
+
         const role = session?.user?.role;
 
-        if (role === 'User') {
-            router.push('/');
-        } else if (role === 'Employee') {
+        if (role === 'Employee') {
             router.push('/employee');
         } else {
             router.push('/dashboard');
@@ -119,7 +122,7 @@ function LoginForm() {
          >
             <div className="text-center lg:text-left space-y-2">
                <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Welcome back</h2>
-               <p className="text-gray-500 dark:text-gray-400">Please enter your details to sign in.</p>
+               <p className="text-gray-500 dark:text-gray-400">Please enter your Iqama ID to sign in.</p>
             </div>
 
             {error && (
@@ -135,14 +138,14 @@ function LoginForm() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
                <div className="space-y-1.5">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">Mobile Number</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">Iqama / ID Number</label>
                   <input 
-                    type="tel" 
+                    type="text" 
                     required
-                    value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
+                    value={iqamaNumber}
+                    onChange={(e) => setIqamaNumber(e.target.value)}
                     className="flex h-12 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-base placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37] transition-all shadow-sm"
-                    placeholder="05..."
+                    placeholder="Enter Iqama Number"
                   />
                </div>
                

@@ -5,9 +5,10 @@ import { useSession } from "next-auth/react";
 import { 
   UserPlus, Search, Filter, MoreHorizontal, FileText, CheckCircle, 
   XCircle, X, Loader2, LayoutGrid, List, Eye, Edit, Trash,
-  DollarSign, TrendingUp, Calendar, Wallet, User as UserIcon
+  DollarSign, TrendingUp, Calendar, Wallet, User as UserIcon, Upload
 } from "lucide-react";
 import toast from 'react-hot-toast';
+import { useRef } from 'react';
 
 export default function UserManagementPage() {
   const { data: session } = useSession();
@@ -28,11 +29,15 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // Import Preview State
+  const [importPreviewData, setImportPreviewData] = useState([]);
+  const [isImportPreviewOpen, setIsImportPreviewOpen] = useState(false);
+
   // Form State
   const initialFormState = {
     id: null,
     name: "", mobile: "", email: "", password: "", role: "Employee",
-    sm: "", empCode: "", designation: "Porter", shift: "A", 
+    sm: "Auto Generated", empCode: "", designation: "Porter", shift: "A", 
     status: "In Work", terminal: "Hajj Terminal",
     iqamaNumber: "", passportNumber: ""
   };
@@ -95,11 +100,9 @@ export default function UserManagementPage() {
   const validateForm = () => {
     const newErrors = {};
     if (!formData.name.trim()) newErrors.name = "Full Name is required";
-    if (!formData.mobile.trim()) newErrors.mobile = "Mobile number is required";
-    if (!formData.password && !formData.id) newErrors.password = "Password is required for new users";
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-       newErrors.email = "Invalid email address";
-    }
+    if (!formData.iqamaNumber.trim()) newErrors.iqamaNumber = "Iqama Number is required";
+    // Mobile/Email/Password no longer strict requirements for creation as per new logic
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -179,64 +182,536 @@ export default function UserManagementPage() {
     }
   }
 
-  const filteredUsers = users.filter(user => 
-    user.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    user.empCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.sm?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filters State
+  const [filterDesignation, setFilterDesignation] = useState("All");
+  const [filterShift, setFilterShift] = useState("All");
+  const [filterTerminal, setFilterTerminal] = useState("All");
+
+  // Selection State
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+
+  // ... (existing functions)
+
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = 
+        user.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        user.empCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.sm?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.iqamaNumber?.includes(searchTerm);
+    
+    const matchesDesignation = filterDesignation === "All" || user.designation === filterDesignation;
+    const matchesShift = filterShift === "All" || user.shift === filterShift;
+    const matchesTerminal = filterTerminal === "All" || user.terminal === filterTerminal;
+
+    return matchesSearch && matchesDesignation && matchesShift && matchesTerminal;
+  }).sort((a, b) => {
+      // Sort Current User to Top
+      const email = session?.user?.email;
+      if (!email) return 0;
+      const isMeA = a.email === email;
+      const isMeB = b.email === email;
+      if (isMeA && !isMeB) return -1;
+      if (!isMeA && isMeB) return 1;
+      return 0;
+  });
+
+  const handleSelectAll = (e) => {
+      if (e.target.checked) {
+          setSelectedUserIds(filteredUsers.map(u => u._id));
+      } else {
+          setSelectedUserIds([]);
+      }
+  };
+
+  const handleSelectUser = (id) => {
+      setSelectedUserIds(prev => 
+        prev.includes(id) ? prev.filter(uid => uid !== id) : [...prev, id]
+      );
+  };
+
+  const handleBulkDelete = async () => {
+      if (selectedUserIds.length === 0) return;
+      if (!confirm(`Are you sure you want to delete ${selectedUserIds.length} users?`)) return;
+
+      try {
+          const res = await fetch(`/api/users?id=${selectedUserIds.join(',')}`, { method: 'DELETE' });
+          if (res.ok) {
+              toast.success(`Deleted ${selectedUserIds.length} users.`);
+              setSelectedUserIds([]);
+              fetchUsers();
+          } else {
+              toast.error("Failed to delete selected users.");
+          }
+      } catch (err) {
+          toast.error("Error deleting users.");
+      }
+  };
+
+  const handleDeleteAllFiltered = async () => {
+      // This is dangerous, so we ask for specific confirmation text
+      const code = prompt("Type 'DELETE ALL' to confirm deleting ALL users (Admins are safe).");
+      if (code !== 'DELETE ALL') return;
+
+      try {
+          const res = await fetch(`/api/users?all=true`, { method: 'DELETE' });
+          const data = await res.json();
+          if (res.ok) {
+              toast.success(data.message);
+              fetchUsers();
+          } else {
+              toast.error(data.error || "Failed.");
+          }
+      } catch (err) {
+          toast.error("Error deleting all users.");
+      }
+  };
+
+  const handleBulkUpdate = async (field, value) => {
+     if (selectedUserIds.length === 0) return;
+     if(!confirm(`Update ${field} to "${value}" for ${selectedUserIds.length} users?`)) return;
+
+     const toastId = toast.loading(`Updating ${selectedUserIds.length} users...`);
+     
+     try {
+        const res = await fetch('/api/users', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ids: selectedUserIds,
+                [field]: value
+            })
+        });
+
+        if (res.ok) {
+            toast.success("Updated successfully!", { id: toastId });
+            fetchUsers();
+            setSelectedUserIds([]); // Optional: clear selection after update
+        } else {
+            const data = await res.json();
+            toast.error(data.error || "Update failed", { id: toastId });
+        }
+     } catch(e) {
+         toast.error("Bulk update failed", { id: toastId });
+     }
+  };
+
+  // --- IMPORT HELPER FUNCTIONS ---
+  const handleUpdatePreviewRow = (index, field, value) => {
+      setImportPreviewData(prev => {
+          const newData = [...prev];
+          newData[index] = { ...newData[index], [field]: value };
+          
+          const row = newData[index];
+          // Check duplicates against actual users list
+          const duplicate = users.some(u => 
+              (u.iqamaNumber && String(u.iqamaNumber) === String(row.iqamaNumber)) || 
+              (u.empCode && row.empCode && String(u.empCode) === String(row.empCode))
+          );
+          
+          newData[index].isValid = !!row.name && !!row.iqamaNumber && !duplicate;
+          newData[index].isDuplicate = duplicate;
+          
+          return newData;
+      });
+  };
+
+  const handleRemovePreviewRow = (index) => {
+      setImportPreviewData(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleFinalizeImport = async () => {
+      const validData = importPreviewData.filter(d => d.isValid);
+      if(validData.length === 0) return;
+      
+      setIsSubmitting(true);
+      let successCount = 0;
+      let failCount = 0;
+      
+      const toastId = toast.loading(`Starting import of ${validData.length} users...`);
+      
+      try {
+          // Process sequentially
+          for (let i = 0; i < validData.length; i++) {
+             const row = validData[i];
+             
+             if(i % 5 === 0) toast.loading(`Importing ${i+1}/${validData.length}...`, { id: toastId });
+
+             const payload = {
+                 name: row.name,
+                 iqamaNumber: String(row.iqamaNumber),
+                 empCode: row.empCode ? String(row.empCode) : "",
+                 designation: row.designation || "Porter",
+                 shift: row.shift || "A", 
+                 terminal: row.terminal || "Hajj Terminal",
+                 role: "Employee",
+                 status: "In Work",
+                 mobile: "", 
+                 email: ""
+             };
+             
+             try {
+                const res = await fetch('/api/users', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if(res.ok) successCount++;
+                else failCount++;
+             } catch(e) {
+                failCount++;
+            }
+          }
+          
+          if(successCount > 0) {
+              toast.success(`Successfully imported ${successCount} users!`, { id: toastId });
+              setIsImportPreviewOpen(false);
+              setImportPreviewData([]);
+              fetchUsers();
+          } else {
+              toast.error(`Import failed. ${failCount} errors.`, { id: toastId });
+          }
+      } catch(e) {
+          toast.error("Critical import error", { id: toastId });
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header Actions */}
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6 min-h-screen pb-20">
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-         <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Manage employees, roles, and shifts.</p>
-         </div>
-         <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-               <button 
-                 onClick={() => setViewMode("table")}
-                 className={`p-1.5 rounded-md transition-all ${viewMode === 'table' ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
-               >
-                 <List className="h-4 w-4" />
-               </button>
-               <button 
-                 onClick={() => setViewMode("grid")}
-                 className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
-               >
-                 <LayoutGrid className="h-4 w-4" />
-               </button>
-            </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <UserIcon className="h-6 w-6 text-[var(--primary)]" /> User Management
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Manage employees, roles, shifts, and permissions.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => {
+                 // Trigger hidden file input or open modal
+                 // For now we open the preview modal directly IF we had data, 
+                 // but typically we need an input. 
+                 // We'll assume the user has a way to get data into 'importPreviewData' 
+                 // or we can add a file input here.
+                 // For this fix, let's just make it standard 'Import' button style
+                 document.getElementById('excel-upload').click();
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+          >
+            <Upload className="h-4 w-4" /> Import Excel
+          </button>
+          <input 
+            type="file" 
+            id="excel-upload" 
+            hidden 
+            accept=".xlsx, .xls" 
+            onChange={async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
 
-            <div className="text-xs px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full font-medium">
-               {session?.user?.role || 'User'}
-            </div>
-            
-            <button 
-              onClick={openAddModal}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:opacity-90 transition-opacity font-medium shadow-lg shadow-gray-200 dark:shadow-none"
-            >
-               <UserPlus className="h-4 w-4" /> Add Employee
-            </button>
-         </div>
+                const loadToast = toast.loading("Reading Excel file...");
+                try {
+                    const XLSX = await import("xlsx");
+                    const reader = new FileReader();
+                    
+                    reader.onload = (evt) => {
+                        try {
+                            const buffer = evt.target.result;
+                            const wb = XLSX.read(buffer, { type: 'array' });
+                            const wsname = wb.SheetNames[0];
+                            const ws = wb.Sheets[wsname];
+                            
+                            // Get as array of arrays to find the header row
+                            const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                            
+                            if (!rawData || rawData.length === 0) {
+                                toast.error("File is empty", { id: loadToast });
+                                return;
+                            }
+
+                            // 1. Find the Header Row (Look for 'Name' and 'Iqama' or 'ID')
+                            let headerRowIndex = 0;
+                            const searchLimit = Math.min(rawData.length, 25);
+
+                            for (let i = 0; i < searchLimit; i++) {
+                                const rowStr = rawData[i].map(c => String(c || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+                                // Check if row has 'name' AND ('code' or 'iqama' or 'id')
+                                const hasName = rowStr.some(s => s.includes('name'));
+                                const hasId = rowStr.some(s => s.includes('iqama') || s.includes('id') || s.includes('code'));
+                                if (hasName && hasId) {
+                                    headerRowIndex = i;
+                                    break;
+                                }
+                            }
+
+                            const headers = rawData[headerRowIndex].map(h => String(h || ''));
+                            console.log("Headers found:", headers);
+                            const dataRows = rawData.slice(headerRowIndex + 1);
+
+                            // Robust Key Matcher
+                            const getKeyIndex = (keys) => {
+                                const cleanKeys = keys.map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''));
+                                return headers.findIndex(h => {
+                                    const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                    return cleanKeys.some(k => cleanH.includes(k) || k === cleanH);
+                                });
+                            };
+
+                            const nameIdx = getKeyIndex(['name', 'full name', 'employee name']);
+                            const iqamaIdx = getKeyIndex(['iqama', 'iqama #', 'iqama number', 'id', 'national id']);
+                            const codeIdx = getKeyIndex(['code', 'emp code', 'employee code']);
+                            const desigIdx = getKeyIndex(['designation', 'role', 'position']);
+                            const pptIdx = getKeyIndex(['passport', 'passport #']);
+                            const shiftIdx = getKeyIndex(['shift', 'shift time']);
+                            const termIdx = getKeyIndex(['terminal', 'location']);
+
+                            const mapped = dataRows.map((row, i) => {
+                                 // Safe Get
+                                 const val = (idx) => idx !== -1 && row[idx] ? String(row[idx]).trim() : "";
+
+                                 const name = val(nameIdx);
+                                 const iqama = val(iqamaIdx);
+                                 const code = val(codeIdx);
+                                 const designation = val(desigIdx);
+                                 const passport = val(pptIdx);
+                                 
+                                 const rawShift = val(shiftIdx);
+                                 const rawTerminal = val(termIdx);
+
+                                 // Smart Parse
+                                 let shift = "A";
+                                 let terminal = "Hajj Terminal"; // Default
+
+                                 const combined = (rawShift + " " + rawTerminal).toLowerCase();
+                                 if (combined.includes('night') || rawShift.toUpperCase() === 'B') shift = 'B';
+                                 else if (combined.includes('day') || rawShift.toUpperCase() === 'A') shift = 'A';
+
+                                 if (combined.includes('hajj')) terminal = 'Hajj Terminal';
+                                 else if (combined.includes('north')) terminal = 'North Terminal';
+                                 else if (combined.includes('new')) terminal = 'New Terminal';
+
+                                 const isDuplicate = users.some(u => 
+                                    (u.iqamaNumber && iqama && String(u.iqamaNumber) === String(iqama)) || 
+                                    (u.empCode && code && String(u.empCode) === String(code))
+                                 );
+
+                                 return {
+                                    tempId: i,
+                                    name,
+                                    iqamaNumber: iqama,
+                                    empCode: code,
+                                    designation,
+                                    passportNumber: passport,
+                                    shift,
+                                    terminal,
+                                    isValid: !!name && !!iqama && !isDuplicate, 
+                                    isDuplicate
+                                 };
+                            }).filter(row => row.name || row.iqamaNumber);
+
+                            if(mapped.length === 0) {
+                                toast.error(`No valid rows found. Header row ${headerRowIndex+1} had: ${headers.slice(0,3).join(', ')}`, { id: loadToast });
+                            } else {
+                                toast.success(`Found ${mapped.length} users`, { id: loadToast });
+                                setImportPreviewData(mapped);
+                                setIsImportPreviewOpen(true);
+                            }
+                            e.target.value = '';
+
+                        } catch (parseErr) {
+                            console.error(parseErr);
+                            toast.error("Error parsing data", { id: loadToast });
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                } catch(err) {
+                    console.error(err);
+                    toast.error("Failed to load Excel processor", { id: loadToast });
+                }
+            }}
+          />
+          
+           {/* JSON Input */}
+           <input 
+            type="file" 
+            id="json-upload" 
+            hidden 
+            accept=".json" 
+            onChange={async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const loadToast = toast.loading("Reading JSON file...");
+                const reader = new FileReader();
+
+                reader.onload = (evt) => {
+                    try {
+                        const json = JSON.parse(evt.target.result);
+                        if (!Array.isArray(json)) {
+                            toast.error("JSON must be an array of objects", { id: loadToast });
+                            return;
+                        }
+
+                        const mapped = json.map((row, i) => {
+                             const name = row.name || row.Name || row.full_name;
+                             const iqama = row.iqamaNumber || row.iqama || row.id || row.ID;
+                             const code = row.empCode || row.code;
+                             const designation = row.designation || row.role;
+                             const shift = row.shift;
+                             const terminal = row.terminal;
+
+                             const isDuplicate = users.some(u => 
+                                (u.iqamaNumber && iqama && String(u.iqamaNumber) === String(iqama)) || 
+                                (u.empCode && code && String(u.empCode) === String(code))
+                             );
+
+                             return {
+                                tempId: i,
+                                name,
+                                iqamaNumber: iqama,
+                                empCode: code,
+                                designation,
+                                shift: shift || "A",
+                                terminal: terminal || "Hajj Terminal",
+                                isValid: !!name && !!iqama && !isDuplicate,
+                                isDuplicate
+                             };
+                        });
+                        
+                        if(mapped.length === 0) {
+                             toast.error("No valid data found", { id: loadToast });
+                        } else {
+                             toast.success(`Found ${mapped.length} records`, { id: loadToast });
+                             setImportPreviewData(mapped);
+                             setIsImportPreviewOpen(true);
+                        }
+                        e.target.value = '';
+
+                    } catch (err) {
+                        toast.error("Invalid JSON file", { id: loadToast });
+                    }
+                };
+                reader.readAsText(file);
+            }}
+          />
+
+          <button 
+             onClick={() => document.getElementById('json-upload').click()}
+             className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+           >
+             <FileText className="h-4 w-4 text-orange-500" /> Import JSON
+          </button>
+
+          <button 
+             onClick={() => window.open('/import-help', '_blank') || alert("Excel Columns:\n- Name (Required)\n- Iqama / ID (Required)\n- Code\n- Designation\n- Shift\n- Terminal\n\nJSON Format:\n[ { \"name\": \"...\", \"iqama\": \"...\" }, ... ]")}
+             className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+             title="How to import?"
+           >
+             <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center font-bold text-sm">?</div>
+          </button>
+          <button 
+            onClick={openAddModal} 
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all hover:scale-105 active:scale-95"
+          >
+            <UserPlus className="h-4 w-4" /> Add Employee
+          </button>
+        </div>
       </div>
 
-      {/* Filters & Search */}
-      <div className="bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col md:flex-row gap-4">
-         <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Search by Name, Emp Code, or SM..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-800 border-none rounded-lg focus:ring-2 focus:ring-[var(--primary)]/20 outline-none transition-all"
-            />
-         </div>
-         <button className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-            <Filter className="h-4 w-4" /> Filter
-         </button>
+      {/* Filters & Search & Bulk Actions */}
+      <div className="bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input 
+                type="text" 
+                placeholder="Search by Name, Code, SM, or Iqama..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-800 border-none rounded-lg focus:ring-2 focus:ring-[var(--primary)]/20 outline-none transition-all"
+                />
+            </div>
+            
+            {/* Advanced Filters */}
+            <select value={filterDesignation} onChange={(e) => setFilterDesignation(e.target.value)} className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-none rounded-lg outline-none text-sm cursor-pointer">
+                <option value="All">All Designations</option>
+                <option value="Porter">Porter</option>
+                <option value="Team Leader">Team Leader</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Labor">Labor</option>
+                <option value="Cashier">Cashier</option>
+                <option value="Hotel Incharge">Hotel Incharge</option>
+                <option value="Operation Manager">Operation Manager</option>
+                <option value="Transport Incharge">Transport Incharge</option>
+            </select>
+            <select value={filterShift} onChange={(e) => setFilterShift(e.target.value)} className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-none rounded-lg outline-none text-sm cursor-pointer">
+                <option value="All">All Shifts</option>
+                <option value="A">Shift A</option>
+                <option value="B">Shift B</option>
+            </select>
+             <select value={filterTerminal} onChange={(e) => setFilterTerminal(e.target.value)} className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-none rounded-lg outline-none text-sm cursor-pointer">
+                <option value="All">All Terminals</option>
+                <option value="Hajj Terminal">Hajj Terminal</option>
+                <option value="New Terminal">New Terminal</option>
+                <option value="North Terminal">North Terminal</option>
+            </select>
+          </div>
+
+          {/* Bulk Action Bar */}
+          <div className="flex items-center justify-between border-t border-gray-100 dark:border-gray-800 pt-3 mt-1">
+             <div className="text-xs text-gray-500 font-medium">
+                {users.length} Total Users • {filteredUsers.length} Shown
+             </div>
+             
+             <div className="flex items-center gap-2">
+                 {selectedUserIds.length > 0 && (
+                     <>
+                        <div className="h-6 w-[1px] bg-gray-200 dark:bg-gray-700 mx-2"></div>
+                        
+                        {/* Bulk Shift */}
+                        <div className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-lg">
+                            <span className="text-[10px] font-bold text-blue-600 uppercase">Set Shift:</span>
+                            <select 
+                                onChange={(e) => handleBulkUpdate('shift', e.target.value)} 
+                                className="bg-transparent text-xs font-bold text-blue-700 outline-none cursor-pointer"
+                                value=""
+                            >
+                                <option value="" disabled>Select</option>
+                                <option value="A">Shift A</option>
+                                <option value="B">Shift B</option>
+                            </select>
+                        </div>
+
+                        {/* Bulk Terminal */}
+                         <div className="flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 px-2 py-1 rounded-lg">
+                            <span className="text-[10px] font-bold text-purple-600 uppercase">Set Terminal:</span>
+                            <select 
+                                onChange={(e) => handleBulkUpdate('terminal', e.target.value)} 
+                                className="bg-transparent text-xs font-bold text-purple-700 outline-none cursor-pointer"
+                                value=""
+                            >
+                                <option value="" disabled>Select</option>
+                                <option value="Hajj Terminal">Hajj</option>
+                                <option value="New Terminal">New</option>
+                                <option value="North Terminal">North</option>
+                            </select>
+                        </div>
+
+                     <button onClick={handleBulkDelete} className="flex items-center gap-2 px-3 py-1.5 bg-red-50 text-red-600 rounded-md text-xs font-bold hover:bg-red-100 transition-colors ml-2">
+                        <Trash className="h-3.5 w-3.5" /> Delete ({selectedUserIds.length})
+                     </button>
+                     </>
+                 )}
+                 <button onClick={handleDeleteAllFiltered} className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-gray-600 rounded-md text-xs font-bold hover:bg-red-50 hover:text-red-600 transition-colors">
+                    <Trash className="h-3.5 w-3.5" /> Delete ALL Users
+                 </button>
+             </div>
+          </div>
       </div>
 
       {loading ? (
@@ -250,7 +725,7 @@ export default function UserManagementPage() {
               <UserPlus className="h-8 w-8 text-gray-300" />
            </div>
            <h3 className="text-lg font-medium text-gray-900 dark:text-white">No users found</h3>
-           <p className="text-gray-500 dark:text-gray-400 max-w-sm mt-1">Get started by adding a new employee to your organization.</p>
+           <p className="text-gray-500 dark:text-gray-400 max-w-sm mt-1">Try adjusting your filters or import new employees.</p>
         </div>
       ) : (
         <>
@@ -261,6 +736,14 @@ export default function UserManagementPage() {
                 <table className="w-full text-left border-collapse">
                    <thead>
                       <tr className="bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800 text-[11px] uppercase text-gray-400 font-bold tracking-wider">
+                         <th className="px-6 py-4 w-10">
+                            <input 
+                                type="checkbox" 
+                                onChange={handleSelectAll} 
+                                checked={filteredUsers.length > 0 && selectedUserIds.length === filteredUsers.length}
+                                className="rounded border-gray-300 text-[var(--primary)] focus:ring-[var(--primary)]" 
+                            />
+                         </th>
                          <th className="px-6 py-4">Employee</th>
                          <th className="px-6 py-4">Status & Role</th>
                          <th className="px-6 py-4">Location & Shift</th>
@@ -270,7 +753,15 @@ export default function UserManagementPage() {
                    </thead>
                    <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
                         {filteredUsers.map((user) => (
-                         <tr key={user._id} className="hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-all duration-200 group">
+                         <tr key={user._id} className={`hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-all duration-200 group ${selectedUserIds.includes(user._id) ? 'bg-blue-50/30' : ''} ${session?.user?.email && user.email === session.user.email ? 'bg-green-50/60 dark:bg-green-900/10 border-l-4 border-l-green-500 shadow-sm' : ''}`}>
+                            <td className="px-6 py-4">
+                                <input 
+                                    type="checkbox" 
+                                    checked={selectedUserIds.includes(user._id)}
+                                    onChange={() => handleSelectUser(user._id)}
+                                    className="rounded border-gray-300 text-[var(--primary)] focus:ring-[var(--primary)]" 
+                                />
+                            </td>
                             <td className="px-6 py-4">
                                <div className="flex items-center gap-3">
                                   <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[var(--primary)] to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-indigo-500/20">
@@ -279,7 +770,7 @@ export default function UserManagementPage() {
                                   <div>
                                      <div className="flex items-center gap-2">
                                        <span className="text-sm font-bold text-gray-900 dark:text-white">{user.name}</span>
-                                       {session?.user?.email === user.email && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold border border-blue-100">YOU</span>}
+                                       {session?.user?.email && user.email === session.user.email && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold border border-blue-100">YOU</span>}
                                      </div>
                                      <div className="flex items-center gap-2 mt-0.5">
                                         <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 rounded font-mono">{user.empCode || 'N/A'}</span>
@@ -321,8 +812,8 @@ export default function UserManagementPage() {
                             </td>
                             <td className="px-6 py-4">
                                <div className="flex flex-col text-xs">
-                                  <span className="font-semibold text-gray-700 dark:text-gray-300">{user.mobile}</span>
-                                  <span className="text-gray-400 mt-0.5">{user.email || 'No email'}</span>
+                                  <span className="font-semibold text-gray-700 dark:text-gray-300">{user.sm || 'No SM#'}</span>
+                                  <span className="text-gray-400 mt-0.5">ID: {user.iqamaNumber || 'N/A'}</span>
                                </div>
                             </td>
                             <td className="px-6 py-4 text-center">
@@ -444,20 +935,27 @@ export default function UserManagementPage() {
                         {errors.name && <p className="text-xs text-red-500 font-medium">{errors.name}</p>}
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Mobile <span className="text-red-500">*</span></label>
-                        <input type="tel" name="mobile" value={formData.mobile} onChange={handleInputChange} className={`w-full h-10 px-3 rounded-lg border ${errors.mobile ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-gray-200 dark:border-gray-700'} bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)] outline-none transition-all`} placeholder="e.g. +966..." />
-                        {errors.mobile && <p className="text-xs text-red-500 font-medium">{errors.mobile}</p>}
+                         <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Iqama / ID <span className="text-red-500">*</span></label>
+                         <input type="text" name="iqamaNumber" maxLength={10} value={formData.iqamaNumber} onChange={handleInputChange} className={`w-full h-10 px-3 rounded-lg border ${errors.iqamaNumber ? 'border-red-500' : 'border-gray-200 dark:border-gray-700'} bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 outline-none transition-all`} placeholder="10-digit ID" />
+                         {errors.iqamaNumber && <p className="text-xs text-red-500 font-medium">{errors.iqamaNumber}</p>}
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Mobile</label>
+                        <input type="tel" name="mobile" value={formData.mobile} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)] outline-none transition-all" placeholder="Optional" />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Email</label>
-                        <input type="email" name="email" value={formData.email} onChange={handleInputChange} className={`w-full h-10 px-3 rounded-lg border ${errors.email ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-gray-200 dark:border-gray-700'} bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)] outline-none transition-all`} placeholder="john@example.com" />
-                        {errors.email && <p className="text-xs text-red-500 font-medium">{errors.email}</p>}
+                        <input type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)] outline-none transition-all" placeholder="Optional" />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Password {formData.id && <span className="text-gray-400 font-normal">(Optional to update)</span>} {!formData.id && <span className="text-red-500">*</span>}</label>
-                        <input type="password" name="password" value={formData.password} onChange={handleInputChange} className={`w-full h-10 px-3 rounded-lg border ${errors.password ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-gray-200 dark:border-gray-700'} bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)] outline-none transition-all`} placeholder="••••••••" />
-                        {errors.password && <p className="text-xs text-red-500 font-medium">{errors.password}</p>}
-                      </div>
+                      
+                      {/* Only Show Password Field when Editing (Optional Reset) */}
+                      {formData.id && (
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Reset Password <span className="text-gray-400 font-normal">(Leave blank to keep current)</span></label>
+                            <input type="password" name="password" value={formData.password} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)] outline-none transition-all" placeholder="New Password" />
+                          </div>
+                      )}
                    </div>
                 </div>
 
@@ -467,13 +965,13 @@ export default function UserManagementPage() {
                       Employment Details
                    </h4>
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="space-y-1"><label className="text-xs font-semibold text-gray-700 dark:text-gray-300">SM Number</label><input type="text" name="sm" value={formData.sm} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 outline-none transition-all" /></div>
+                      <div className="space-y-1"><label className="text-xs font-semibold text-gray-700 dark:text-gray-300">SM Number</label><input type="text" name="sm" value={formData.sm} readOnly className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/50 cursor-not-allowed text-gray-500 focus:ring-0 outline-none transition-all" /></div>
                       <div className="space-y-1"><label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Emp Code</label><input type="text" name="empCode" value={formData.empCode} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 outline-none transition-all" /></div>
                       <div className="space-y-1">
                          <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Role</label>
                          <div className="relative">
                            <select name="role" value={formData.role} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 outline-none appearance-none cursor-pointer">
-                              <option value="Admin">Admin</option><option value="Cashier">Cashier</option><option value="Employee">Employee</option><option value="User">User</option>
+                              <option value="Admin">Admin</option><option value="Cashier">Cashier</option><option value="Employee">Employee</option>
                            </select>
                            <MoreHorizontal className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none rotate-90" />
                          </div>
@@ -482,7 +980,15 @@ export default function UserManagementPage() {
                          <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Designation</label>
                          <div className="relative">
                             <select name="designation" value={formData.designation} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 outline-none appearance-none cursor-pointer">
-                                <option value="Porter">Porter</option><option value="Team Leader">Team Leader</option><option value="Supervisor">Supervisor</option><option value="Ground Operation Manager">Ground Operation Manager</option>
+                                <option value="Porter">Porter</option>
+                                <option value="Team Leader">Team Leader</option>
+                                <option value="Supervisor">Supervisor</option>
+                                <option value="Ground Operation Manager">Ground Operation Manager</option>
+                                <option value="GID">GID</option>
+                                <option value="Hotel Incharge">Hotel Incharge</option>
+                                <option value="Cashier">Cashier</option>
+                                <option value="Operation Manager">Operation Manager</option>
+                                <option value="Transport Incharge">Transport Incharge</option>
                             </select>
                             <MoreHorizontal className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none rotate-90" />
                          </div>
@@ -520,7 +1026,6 @@ export default function UserManagementPage() {
                    </div>
 
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                       <div className="space-y-1"><label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Iqama / ID</label><input type="text" name="iqamaNumber" value={formData.iqamaNumber} onChange={handleInputChange} maxLength={10} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 outline-none transition-all" /></div>
                        <div className="space-y-1"><label className="text-xs font-semibold text-gray-700 dark:text-gray-300">Passport</label><input type="text" name="passportNumber" value={formData.passportNumber} onChange={handleInputChange} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-[var(--primary)]/50 outline-none transition-all" /></div>
                    </div>
                 </div>
@@ -584,119 +1089,283 @@ export default function UserManagementPage() {
                               <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Location</p>
                               <p className="font-bold text-sm dark:text-white flex items-center gap-1"><CheckCircle className="h-3 w-3 text-green-500"/> {selectedUser.terminal}</p>
                           </div>
-                      </div>
-                  </div>
+                       </div>
+                   </div>
 
-                  {/* RIGHT SIDE: Content Tabs */}
-                  <div className="flex-1 flex flex-col bg-white dark:bg-gray-900">
-                      {/* Tabs */}
-                      <div className="flex border-b border-gray-100 dark:border-gray-800 px-6">
-                          <button 
-                            onClick={() => setActiveTab('overview')}
-                            className={`px-6 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'overview' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-                          >
-                              <UserIcon className="h-4 w-4" /> Overview
-                          </button>
-                          <button 
-                            onClick={() => setActiveTab('salary')}
-                            className={`px-6 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'salary' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-                          >
-                              <Wallet className="h-4 w-4" /> Salary & Finance
-                          </button>
-                      </div>
+                   {/* RIGHT SIDE: Content Tabs */}
+                   <div className="flex-1 flex flex-col bg-white dark:bg-gray-900">
+                       {/* Tabs */}
+                       <div className="flex border-b border-gray-100 dark:border-gray-800 px-6">
+                           <button 
+                             onClick={() => setActiveTab('overview')}
+                             className={`px-6 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'overview' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                           >
+                               <UserIcon className="h-4 w-4" /> Overview
+                           </button>
+                           <button 
+                             onClick={() => setActiveTab('salary')}
+                             className={`px-6 py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'salary' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                           >
+                               <Wallet className="h-4 w-4" /> Salary & Finance
+                           </button>
+                       </div>
 
-                      {/* Content Area */}
-                      <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-gray-50/50 dark:bg-gray-900">
-                          {activeTab === 'overview' && (
-                              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-                                  <div className="grid grid-cols-2 gap-4">
-                                      <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                                          <div className="h-8 w-8 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center mb-2"><FileText className="h-4 w-4"/></div>
-                                          <p className="text-xs text-gray-400 font-bold uppercase">Iqama Number</p>
-                                          <p className="text-lg font-bold dark:text-white font-mono">{selectedUser.iqamaNumber || 'Not Set'}</p>
-                                      </div>
-                                      <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                                          <div className="h-8 w-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mb-2"><FileText className="h-4 w-4"/></div>
-                                          <p className="text-xs text-gray-400 font-bold uppercase">Passport Number</p>
-                                          <p className="text-lg font-bold dark:text-white font-mono">{selectedUser.passportNumber || 'Not Set'}</p>
-                                      </div>
-                                  </div>
-                                  <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
-                                      <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2"><CheckCircle className="h-4 w-4"/> Employment Status</h4>
-                                      <p className="text-sm text-blue-600 dark:text-blue-400">
-                                          This employee is currently <span className="font-bold">{selectedUser.status}</span> and assigned to the <span className="font-bold">{selectedUser.shift} Shift</span> at <span className="font-bold">{selectedUser.terminal}</span>.
-                                      </p>
-                                  </div>
-                              </div>
-                          )}
+                       {/* Content Area */}
+                       <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-gray-50/50 dark:bg-gray-900">
+                           {activeTab === 'overview' && (
+                               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                                   <div className="grid grid-cols-2 gap-4">
+                                       <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                                           <div className="h-8 w-8 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center mb-2"><FileText className="h-4 w-4"/></div>
+                                           <p className="text-xs text-gray-400 font-bold uppercase">Iqama Number</p>
+                                           <p className="text-lg font-bold dark:text-white font-mono">{selectedUser.iqamaNumber || 'Not Set'}</p>
+                                       </div>
+                                       <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                                           <div className="h-8 w-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mb-2"><FileText className="h-4 w-4"/></div>
+                                           <p className="text-xs text-gray-400 font-bold uppercase">Passport Number</p>
+                                           <p className="text-lg font-bold dark:text-white font-mono">{selectedUser.passportNumber || 'Not Set'}</p>
+                                       </div>
+                                   </div>
+                                   <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                                       <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2"><CheckCircle className="h-4 w-4"/> Employment Status</h4>
+                                       <p className="text-sm text-blue-600 dark:text-blue-400">
+                                           This employee is currently <span className="font-bold">{selectedUser.status}</span> and assigned to the <span className="font-bold">{selectedUser.shift} Shift</span> at <span className="font-bold">{selectedUser.terminal}</span>.
+                                       </p>
+                                   </div>
+                               </div>
+                           )}
 
-                          {activeTab === 'salary' && (
-                              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-                                  {salaryLoading ? (
-                                      <div className="flex justify-center p-10"><Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]"/></div>
-                                  ) : !salaryData ? (
-                                      <div className="text-center p-10 text-gray-400">No Salary Data Available</div>
-                                  ) : (
-                                      <>
-                                          {/* Stats Cards */}
-                                          <div className="grid grid-cols-2 gap-4">
-                                              <div className="p-5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl text-white shadow-lg shadow-green-500/20">
-                                                  <p className="text-xs font-bold uppercase opacity-80 mb-1">Total Earnings</p>
-                                                  <p className="text-2xl font-black">{salaryData.stats.totalEarned.toLocaleString()} <span className="text-sm font-normal">SAR</span></p>
-                                              </div>
-                                              <div className="p-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                                                  <p className="text-xs font-bold text-gray-400 uppercase mb-1">Present Days</p>
-                                                  <p className="text-2xl font-black dark:text-white">{salaryData.stats.presentDays} <span className="text-sm font-normal text-gray-400">/ {salaryData.stats.totalDays}</span></p>
-                                              </div>
-                                          </div>
+                           {activeTab === 'salary' && (
+                               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                                   {salaryLoading ? (
+                                       <div className="flex justify-center p-10"><Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]"/></div>
+                                   ) : !salaryData ? (
+                                       <div className="text-center p-10 text-gray-400">No Salary Data Available</div>
+                                   ) : (
+                                       <>
+                                           {/* Stats Cards */}
+                                           <div className="grid grid-cols-2 gap-4">
+                                               <div className="p-5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl text-white shadow-lg shadow-green-500/20">
+                                                   <p className="text-xs font-bold uppercase opacity-80 mb-1">Total Earnings</p>
+                                                   <p className="text-2xl font-black">{salaryData.stats.totalEarned.toLocaleString()} <span className="text-sm font-normal">SAR</span></p>
+                                               </div>
+                                               <div className="p-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                                                   <p className="text-xs font-bold text-gray-400 uppercase mb-1">Present Days</p>
+                                                   <p className="text-2xl font-black dark:text-white">{salaryData.stats.presentDays} <span className="text-sm font-normal text-gray-400">/ {salaryData.stats.totalDays}</span></p>
+                                               </div>
+                                           </div>
 
-                                          {/* Detailed Log */}
-                                          <div>
-                                              <h4 className="font-bold mb-3 flex items-center gap-2 dark:text-white"><List className="h-4 w-4"/> Payment History</h4>
-                                              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                                  <div className="max-h-60 overflow-y-auto">
-                                                      <table className="w-full text-left text-sm">
-                                                          <thead className="bg-gray-50 dark:bg-gray-900/50 text-[10px] uppercase text-gray-500 font-bold sticky top-0">
-                                                              <tr>
-                                                                  <th className="px-4 py-3">Date</th>
-                                                                  <th className="px-4 py-3">Status</th>
-                                                                  <th className="px-4 py-3">Room</th>
-                                                                  <th className="px-4 py-3 text-right">Amount</th>
-                                                              </tr>
-                                                          </thead>
-                                                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                                              {salaryData.history.map((log, i) => (
-                                                                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                                                      <td className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">{log.date.split('T')[0]}</td>
-                                                                      <td className="px-4 py-3">
-                                                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${['Present','On Duty'].includes(log.status) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                                              {log.status}
-                                                                          </span>
-                                                                      </td>
-                                                                      <td className="px-4 py-3 text-gray-500">{log.roomNumber}</td>
-                                                                      <td className="px-4 py-3 text-right font-bold font-mono dark:text-white">
-                                                                          {log.amount > 0 ? `+${log.amount}` : '-'}
-                                                                      </td>
-                                                                  </tr>
-                                                              ))}
-                                                              {salaryData.history.length === 0 && (
-                                                                  <tr><td colSpan="4" className="p-4 text-center text-gray-400 text-xs">No records found</td></tr>
-                                                              )}
-                                                          </tbody>
-                                                      </table>
-                                                  </div>
-                                              </div>
-                                          </div>
-                                      </>
-                                  )}
-                              </div>
-                          )}
-                      </div>
-                  </div>
-               </div>
+                                           {/* Detailed Log */}
+                                           <div>
+                                               <h4 className="font-bold mb-3 flex items-center gap-2 dark:text-white"><List className="h-4 w-4"/> Payment History</h4>
+                                               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                                                   <div className="max-h-60 overflow-y-auto">
+                                                       <table className="w-full text-left text-sm">
+                                                           <thead className="bg-gray-50 dark:bg-gray-900/50 text-[10px] uppercase text-gray-500 font-bold sticky top-0">
+                                                               <tr>
+                                                                   <th className="px-4 py-3">Date</th>
+                                                                   <th className="px-4 py-3">Status</th>
+                                                                   <th className="px-4 py-3">Room</th>
+                                                                   <th className="px-4 py-3 text-right">Amount</th>
+                                                               </tr>
+                                                           </thead>
+                                                           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                                               {salaryData.history.map((log, i) => (
+                                                                   <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                                       <td className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">{log.date.split('T')[0]}</td>
+                                                                       <td className="px-4 py-3">
+                                                                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${['Present','On Duty'].includes(log.status) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                                               {log.status}
+                                                                           </span>
+                                                                       </td>
+                                                                       <td className="px-4 py-3 text-gray-500">{log.roomNumber}</td>
+                                                                       <td className="px-4 py-3 text-right font-bold font-mono dark:text-white">
+                                                                           {log.amount > 0 ? `+${log.amount}` : '-'}
+                                                                       </td>
+                                                                   </tr>
+                                                               ))}
+                                                               {salaryData.history.length === 0 && (
+                                                                   <tr><td colSpan="4" className="p-4 text-center text-gray-400 text-xs">No records found</td></tr>
+                                                               )}
+                                                           </tbody>
+                                                       </table>
+                                                   </div>
+                                               </div>
+                                           </div>
+                                       </>
+                                   )}
+                               </div>
+                           )}
+                       </div>
+                   </div>
+                </div>
             </div>
          </div>
       )}
+
+       {/* IMPORT PREVIEW MODAL */}
+       {isImportPreviewOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+             <div className="bg-white dark:bg-gray-900 w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col h-[90vh]">
+                 <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
+                     <div>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                           <Upload className="h-5 w-5 text-green-600" /> Review Import Data
+                        </h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                           Review and edit users before importing. {importPreviewData.filter(d=>d.isValid).length} ready to import.
+                        </p>
+                     </div>
+                     <button onClick={() => setIsImportPreviewOpen(false)} className="p-2 hover:bg-gray-200 rounded-full"><X className="h-5 w-5" /></button>
+                 </div>
+
+                 <div className="flex-1 overflow-auto p-0">
+                     <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0 z-10 shadow-sm">
+                             {/* Bulk Update Header Row */}
+                             <tr className="bg-blue-50/30 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-900/20">
+                                 <td colSpan="5" className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider text-right">
+                                    Set All To:
+                                 </td>
+                                 <td className="px-4 py-2">
+                                     <select 
+                                         onChange={(e) => {
+                                             if(confirm(`Set Shift to ${e.target.value} for ALL users?`)) {
+                                                 setImportPreviewData(prev => prev.map(r => ({ ...r, shift: e.target.value })));
+                                             }
+                                         }}
+                                         className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1 py-0.5 text-xs font-bold text-blue-600 outline-none cursor-pointer shadow-sm w-full"
+                                         value=""
+                                     >
+                                         <option value="" disabled>Shift...</option>
+                                         <option value="A">Shift A</option>
+                                         <option value="B">Shift B</option>
+                                     </select>
+                                 </td>
+                                 <td className="px-4 py-2">
+                                      <select 
+                                         onChange={(e) => {
+                                             if(confirm(`Set Terminal to ${e.target.value} for ALL users?`)) {
+                                                 setImportPreviewData(prev => prev.map(r => ({ ...r, terminal: e.target.value })));
+                                             }
+                                         }}
+                                         className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1 py-0.5 text-xs font-bold text-purple-600 outline-none cursor-pointer shadow-sm w-28"
+                                         value=""
+                                     >
+                                         <option value="" disabled>Terminal...</option>
+                                         <option value="Hajj Terminal">Hajj</option>
+                                         <option value="New Terminal">New</option>
+                                         <option value="North Terminal">North</option>
+                                     </select>
+                                 </td>
+                                 <td className="px-4 py-2"></td>
+                             </tr>
+                            <tr>
+                                <th className="px-4 py-3 font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                                <th className="px-4 py-3 font-bold text-gray-500 uppercase tracking-wider">Name <span className="text-red-500">*</span></th>
+                                <th className="px-4 py-3 font-bold text-gray-500 uppercase tracking-wider">Iqama <span className="text-red-500">*</span></th>
+                                <th className="px-4 py-3 font-bold text-gray-500 uppercase tracking-wider">Code</th>
+                                <th className="px-4 py-3 font-bold text-gray-500 uppercase tracking-wider">Designation</th>
+                                <th className="px-4 py-3 font-bold text-gray-500 uppercase tracking-wider">Shift</th>
+                                <th className="px-4 py-3 font-bold text-gray-500 uppercase tracking-wider">Terminal</th>
+                                <th className="px-4 py-3 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                             {importPreviewData.map((row, index) => (
+                                 <tr key={row.tempId} className={`hover:bg-blue-50/50 ${row.isValid ? (row.isUpdate ? 'bg-purple-50/50' : '') : (row.isDuplicate ? 'bg-orange-50/50' : 'bg-red-50/50')}`}>
+                                    <td className="px-4 py-2 text-center">
+                                       {row.isValid 
+                                         ? (row.isUpdate 
+                                             ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">Update Available</span>
+                                             : <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">Pending</span>
+                                           )
+                                         : row.isDuplicate
+                                            ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">Already Exists</span>
+                                            : <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">Invalid</span>
+                                       }
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        <input 
+                                          type="text" 
+                                          value={row.name} 
+                                          onChange={(e) => handleUpdatePreviewRow(index, 'name', e.target.value)}
+                                          className={`w-full bg-transparent border-none focus:ring-0 p-0 text-xs font-bold ${!row.name ? 'placeholder-red-400' : ''}`}
+                                          placeholder="Required"
+                                        />
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        <input 
+                                          type="text" 
+                                          value={row.iqamaNumber} 
+                                          onChange={(e) => handleUpdatePreviewRow(index, 'iqamaNumber', e.target.value)}
+                                          className={`w-full bg-transparent border-none focus:ring-0 p-0 text-xs font-mono ${!row.iqamaNumber ? 'placeholder-red-400' : ''}`}
+                                          placeholder="Required"
+                                        />
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        <input 
+                                          type="text" 
+                                          value={row.empCode} 
+                                          onChange={(e) => handleUpdatePreviewRow(index, 'empCode', e.target.value)}
+                                          className="w-20 bg-transparent border-none focus:ring-0 p-0 text-xs text-gray-500"
+                                        />
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        <input 
+                                          type="text" 
+                                          value={row.designation} 
+                                          onChange={(e) => handleUpdatePreviewRow(index, 'designation', e.target.value)}
+                                          className="w-full bg-transparent border-none focus:ring-0 p-0 text-xs text-gray-500"
+                                        />
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        <select 
+                                           value={row.shift} 
+                                           onChange={(e) => handleUpdatePreviewRow(index, 'shift', e.target.value)}
+                                           className="bg-transparent border-none focus:ring-0 p-0 text-xs cursor-pointer"
+                                        >
+                                            <option value="A">A</option><option value="B">B</option>
+                                        </select>
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        <select 
+                                           value={row.terminal} 
+                                           onChange={(e) => handleUpdatePreviewRow(index, 'terminal', e.target.value)}
+                                           className="bg-transparent border-none focus:ring-0 p-0 text-xs cursor-pointer w-24"
+                                        >
+                                            <option value="Hajj Terminal">Hajj</option><option value="New Terminal">New</option><option value="North Terminal">North</option>
+                                        </select>
+                                    </td>
+                                    <td className="px-4 py-2 text-center">
+                                        <button onClick={() => handleRemovePreviewRow(index)} className="text-gray-400 hover:text-red-500 transition-colors"><X className="h-4 w-4" /></button>
+                                    </td>
+                                 </tr>
+                             ))}
+                        </tbody>
+                     </table>
+                 </div>
+
+                 <div className="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 flex justify-end gap-3">
+                     <button 
+                        onClick={() => { setIsImportPreviewOpen(false); setImportPreviewData([]); }} 
+                        className="px-6 py-2.5 text-sm font-medium hover:bg-white dark:hover:bg-gray-700 rounded-xl transition-all border border-transparent hover:border-gray-200 dark:hover:border-gray-600 text-gray-600 dark:text-gray-300"
+                     >
+                        Cancel Import
+                     </button>
+                     <button 
+                         onClick={handleFinalizeImport} 
+                         disabled={isSubmitting || importPreviewData.filter(d=>d.isValid).length === 0}
+                         className="px-6 py-2.5 text-sm font-bold bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg shadow-green-500/20 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                     >
+                         {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin"/> : <CheckCircle className="h-4 w-4" />}
+                         Complete Import ({importPreviewData.filter(d=>d.isValid).length})
+                     </button>
+                 </div>
+             </div>
+          </div>
+       )}
+
     </div>
   );
 }

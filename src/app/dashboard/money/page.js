@@ -27,11 +27,11 @@ export default function MoneyPage() {
       shift: 'Day',
       distributionType: 'Standard', // Standard vs Equal
       revenue: {
-        groupsDepartureAlfiyah: 0, groupsArrivalAlfiyah: 0,
-        groupsDepartureRahman: 0, groupsArrivalRahman: 0,
-        groupsDepartureBugis: 0, groupsArrivalBugis: 0,
-        groupsArrivalIbrahim: 0, groupsDepartureIbrahim: 0,
-        groupsDepartureGeneric: 0, groupsArrivalGeneric: 0,
+        departureAlfiyah: 0, arrivalAlfiyah: 0,
+        departureRahman: 0, arrivalRahman: 0,
+        departureBugis: 0, arrivalBugis: 0,
+        arrivalIbrahim: 0, departureIbrahim: 0,
+        departureGeneric: 0, arrivalGeneric: 0,
         zamzam: 0, bZamzam: 0,
         passengerCollection: 0, porterCollection: 0, trolley: 0
       },
@@ -39,16 +39,16 @@ export default function MoneyPage() {
         crossShiftTrolleyReceipts: 0, crossShiftTrolleyPayments: 0,
         terminalExpenses: 0, fcUnexchangeable: 0
       },
-      companySettlement: {
-        groupsArrDepAlfiyah: 0, groupsArrDepBugis: 0,
-        groupsArrDepRahman: 0, groupsArrDepIbrahim: 0
-      },
+      // Company Settlement is now calculated strictly from the above, generally.
+      // But usually it's Credit. User said "if name sam to sam totle the Departure and arrival and set hear".
+      // This implies an auto-sum. We'll store it but calculate it on the fly oronSubmit.
+      
       cashDenominations: {
          c500: 0, c200: 0, c100: 0, c50: 0, c20: 0, c10: 0, c5: 0, c2: 0, c1: 0, totalCash: 0
       },
       foreignCurrency: {
          kwd: { amount: 0, sar: 0 }, aed: { amount: 0, sar: 0 }, qar: { amount: 0, sar: 0 }, pkr: { amount: 0, sar: 0 },
-         idr: { amount: 0, sar: 0 }, try: { amount: 0, sar: 0 }, usd: { amount: 0, sar: 0 }, other: { amount: 0, sar: 0 }
+         idr: { amount: 0, sar: 0 }
       },
       bankDeposit: 0, currencyDeposit: 0,
       staffStats: { totalEmp: 0, empAbsent: 0, empOnLeave: 0, empPresent: 0 }
@@ -73,16 +73,11 @@ export default function MoneyPage() {
       laborPercent = 0.50;
       companyPercent = 0.50;
   } else {
-      // Standard Logic
-      // Day: Labor 45 / Company 55
-      // Night: Labor 55 / Company 45
       if (formData.shift === 'Day') {
          laborPercent = 0.45; companyPercent = 0.55;
       } else if (formData.shift === 'Night') {
          laborPercent = 0.55; companyPercent = 0.45;
       } else {
-         // 24 Hours Default -> 50/50? Or Standard Day?
-         // Let's default to Day split if not specified, unless overridden by 'Equal'
          laborPercent = 0.45; companyPercent = 0.55; 
       }
   }
@@ -90,17 +85,28 @@ export default function MoneyPage() {
   const laborAmount = netSalesAmount * laborPercent;
   const companyAmount = netSalesAmount * companyPercent;
   
-  const compSet = formData.companySettlement || {};
-  const totalArrivalDepartureCR = Object.values(compSet).reduce((acc, val) => acc + Number(val || 0), 0);
+  // Calculate Settlements based on Groups (Departure + Arrival)
+  const settAlfiyah = Number(rev.departureAlfiyah || 0) + Number(rev.arrivalAlfiyah || 0);
+  const settRahman = Number(rev.departureRahman || 0) + Number(rev.arrivalRahman || 0);
+  const settBugis = Number(rev.departureBugis || 0) + Number(rev.arrivalBugis || 0);
+  const settIbrahim = Number(rev.departureIbrahim || 0) + Number(rev.arrivalIbrahim || 0);
+  
+  const totalArrivalDepartureCR = settAlfiyah + settRahman + settBugis + settIbrahim;
+
   const denoms = formData.cashDenominations || {};
   const totalCashDenom = 
     (Number(denoms.c500 || 0) * 500) + (Number(denoms.c200 || 0) * 200) +
     (Number(denoms.c100 || 0) * 100) + (Number(denoms.c50 || 0) * 50) +
     (Number(denoms.c20 || 0) * 20) + (Number(denoms.c10 || 0) * 10) +
     (Number(denoms.c5 || 0) * 5) + (Number(denoms.c2 || 0) * 2) + (Number(denoms.c1 || 0) * 1);
+  
   const fc = formData.foreignCurrency || {};
   const totalForeignCashInSar = Object.values(fc).reduce((acc, val) => acc + Number(val?.sar || 0), 0);
+  
   const totalBankAndCurrency = Number(formData.bankDeposit || 0) + Number(formData.currencyDeposit || 0);
+  
+  // Final Net Cash Logic may vary based on user specific accounting. 
+  // Standard: Net Sales - Settlements - Bank Deposits = Net Cash In Hand
   const netCashInHand = netSalesAmount - totalArrivalDepartureCR - totalBankAndCurrency;
 
   const fetchReports = async () => {
@@ -125,14 +131,11 @@ export default function MoneyPage() {
       const ad = r.adjustments || {};
       Object.keys(ad).forEach(k => setValue(`adjustments.${k}`, v(ad[k])));
       
-      const cs = r.companySettlement || {};
-      Object.keys(cs).forEach(k => setValue(`companySettlement.${k}`, v(cs[k])));
-
       const cd = r.cashDenominations || {};
       [500,200,100,50,20,10,5,2,1].forEach(d => setValue(`cashDenominations.c${d}`, v(cd[`c${d}`])));
       
       const fcur = r.foreignCurrency || {};
-      ['kwd','aed','qar','pkr','idr','try','usd','other'].forEach(c => {
+      ['kwd','aed','qar','pkr','idr'].forEach(c => {
           const currencyObj = fcur[c];
           setValue(`foreignCurrency.${c}.sar`, currencyObj ? v(currencyObj.sar) : 0);
           setValue(`foreignCurrency.${c}.amount`, currencyObj ? v(currencyObj.amount) : 0);
@@ -198,10 +201,20 @@ export default function MoneyPage() {
  };
 
   const onSubmit = async (data) => {
+    // Recalculate settlements to ensure consistency
+    const rvn = data.revenue || {};
+    const settlementData = {
+        alfiyah: Number(rvn.departureAlfiyah||0) + Number(rvn.arrivalAlfiyah||0),
+        rahman: Number(rvn.departureRahman||0) + Number(rvn.arrivalRahman||0),
+        bugis: Number(rvn.departureBugis||0) + Number(rvn.arrivalBugis||0),
+        ibrahim: Number(rvn.departureIbrahim||0) + Number(rvn.arrivalIbrahim||0),
+    };
+
     const payload = {
       ...data,
       totalSalesAmount, grossSalesAmount, netSalesAmount,
       distribution: { laborPercentage: laborPercent * 100, companyPercentage: companyPercent * 100, laborAmount, companyAmount },
+      companySettlement: settlementData, // Save calculated settlements
       totalArrivalDepartureCR, totalBankAndCurrency, netCashInHand,
       cashDenominations: { ...data.cashDenominations, totalCash: totalCashDenom },
       foreignCurrency: { ...data.foreignCurrency, totalForeignCashInSar },
@@ -282,11 +295,6 @@ export default function MoneyPage() {
                 <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex justify-between bg-white dark:bg-gray-900 rounded-t-3xl">
                    <h2 className="font-bold text-lg dark:text-white flex items-center gap-2">
                        {editMode ? 'Edit Report' : 'New Report'} - Step {currentStep}/4
-                       {session?.user?.shift && session.user.shift !== 'All' && (
-                           <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 px-2 py-0.5 rounded-md">
-                               Team {session.user.shift}
-                           </span>
-                       )}
                    </h2>
                    <button onClick={() => setIsModalOpen(false)} className="hover:bg-gray-100 dark:hover:bg-gray-800 p-1 rounded-full"><X className="h-5 w-5 text-gray-400" /></button>
                 </div>
@@ -304,29 +312,18 @@ export default function MoneyPage() {
                                             <option value="24 Hours">24 Hours</option>
                                         </select>
                                     </div>
-                                    <div className="mt-4">
-                                        <label className="text-xs text-gray-500 font-bold uppercase mb-2 block">Distribution Split</label>
-                                        <div className="flex gap-4">
-                                            <label className="flex items-center gap-2 text-sm dark:text-gray-300 font-bold">
-                                                <input type="radio" value="Standard" {...register("distributionType")} className="accent-[var(--primary)] w-4 h-4"/> Standard
-                                            </label>
-                                            <label className="flex items-center gap-2 text-sm dark:text-gray-300 font-bold">
-                                                <input type="radio" value="Equal" {...register("distributionType")} className="accent-[var(--primary)] w-4 h-4"/> Equal (50/50)
-                                            </label>
-                                        </div>
-                                    </div>
 
-                                    <h3 className="font-bold border-b dark:border-gray-700 pb-2 mt-4 dark:text-white">Revenue</h3>
-                                    {['groupsDepartureAlfiyah','groupsArrivalAlfiyah','groupsDepartureRahman','groupsArrivalRahman','groupsDepartureBugis','groupsArrivalBugis','groupsArrivalIbrahim','groupsDepartureIbrahim','groupsDepartureGeneric','groupsArrivalGeneric'].map(k => (
-                                        <div key={k} className="flex justify-between items-center"><label className="text-xs text-gray-600 dark:text-gray-400 font-medium">{k.replace(/([A-Z])/g, ' $1').trim()}</label><input type="number" {...register(`revenue.${k}`)} className="w-28 p-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-right dark:text-white font-mono" /></div>
+                                    <h3 className="font-bold border-b dark:border-gray-700 pb-2 mt-4 dark:text-white">Cash Sales</h3>
+                                    {['departureAlfiyah','arrivalAlfiyah','departureRahman','arrivalRahman','departureBugis','arrivalBugis','arrivalIbrahim','departureIbrahim','departureGeneric','arrivalGeneric'].map(k => (
+                                        <div key={k} className="flex justify-between items-center"><label className="text-xs text-gray-600 dark:text-gray-400 font-medium capitalize">{k.replace(/([A-Z])/g, ' $1').trim()}</label><input type="number" {...register(`revenue.${k}`)} className="w-28 p-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-right dark:text-white font-mono" /></div>
                                     ))}
                                 </div>
                                 <div className="space-y-4">
-                                    <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Collections</h3>
+                                    <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Other Collections</h3>
                                     {['zamzam','bZamzam','passengerCollection','porterCollection','trolley'].map(k => (
-                                        <div key={k} className="flex justify-between items-center"><label className="text-xs text-gray-600 dark:text-gray-400 font-medium">{k.replace(/([A-Z])/g, ' $1').trim()}</label><input type="number" {...register(`revenue.${k}`)} className="w-28 p-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-right dark:text-white font-mono" /></div>
+                                        <div key={k} className="flex justify-between items-center"><label className="text-xs text-gray-600 dark:text-gray-400 font-medium capitalize">{k.replace(/([A-Z])/g, ' $1').trim()}</label><input type="number" {...register(`revenue.${k}`)} className="w-28 p-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-right dark:text-white font-mono" /></div>
                                     ))}
-                                    <div className="bg-white dark:bg-gray-900 p-4 rounded-xl text-center border border-gray-100 dark:border-gray-700 shadow-sm mt-4"><p className="text-xs text-gray-500 uppercase font-bold">Total Revenue</p><p className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">{totalSalesAmount.toLocaleString()}</p></div>
+                                    <div className="bg-white dark:bg-gray-900 p-4 rounded-xl text-center border border-gray-100 dark:border-gray-700 shadow-sm mt-4"><p className="text-xs text-gray-500 uppercase font-bold">Total Sales</p><p className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">{totalSalesAmount.toLocaleString()}</p></div>
                                 </div>
                             </div>
                         )}
@@ -337,7 +334,7 @@ export default function MoneyPage() {
                                         <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Adjustments</h3>
                                         <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-100 dark:border-emerald-900/20"><label className="text-sm text-emerald-900 dark:text-emerald-300 font-bold">Cross Shift (+)</label><input type="number" {...register(`adjustments.crossShiftTrolleyReceipts`)} className="w-28 p-1.5 border border-emerald-200 dark:border-emerald-800 rounded text-right bg-white dark:bg-gray-900 dark:text-white font-bold" /></div>
                                         {['crossShiftTrolleyPayments','terminalExpenses','fcUnexchangeable'].map(k => (
-                                            <div key={k} className="flex justify-between items-center p-3 bg-rose-50 dark:bg-rose-900/10 rounded-xl border border-rose-100 dark:border-rose-900/20"><label className="text-sm text-rose-900 dark:text-rose-300 font-medium">{k.replace(/([A-Z])/g, ' $1').trim()} (-)</label><input type="number" {...register(`adjustments.${k}`)} className="w-28 p-1.5 border border-rose-200 dark:border-rose-800 rounded text-right bg-white dark:bg-gray-900 dark:text-white" /></div>
+                                            <div key={k} className="flex justify-between items-center p-3 bg-rose-50 dark:bg-rose-900/10 rounded-xl border border-rose-100 dark:border-rose-900/20"><label className="text-sm text-rose-900 dark:text-rose-300 font-medium capitalize">{k.replace(/([A-Z])/g, ' $1').trim()} (-)</label><input type="number" {...register(`adjustments.${k}`)} className="w-28 p-1.5 border border-rose-200 dark:border-rose-800 rounded text-right bg-white dark:bg-gray-900 dark:text-white" /></div>
                                         ))}
                                     </div>
                                     <div className="space-y-4">
@@ -356,13 +353,16 @@ export default function MoneyPage() {
                             <div className="space-y-6">
                                 <div className="grid md:grid-cols-2 gap-6">
                                     <div className="space-y-4">
-                                        <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Settlement</h3>
-                                        {['groupsArrDepAlfiyah','groupsArrDepBugis','groupsArrDepRahman','groupsArrDepIbrahim'].map(k => (
-                                             <div key={k} className="flex justify-between items-center"><label className="text-xs text-gray-600 dark:text-gray-400 font-medium">{k.replace('groupsArrDep', '').trim()}</label><input type="number" {...register(`companySettlement.${k}`)} className="w-28 p-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-right dark:text-white font-mono" /></div>
-                                        ))}
+                                        <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Settlement (Auto-Calculated)</h3>
+                                        <div className="bg-gray-50 dark:bg-white/5 p-4 rounded-xl space-y-3">
+                                            <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2"><span className="text-sm font-bold">ALFIYAH Total</span> <span className="font-mono">{settAlfiyah.toLocaleString()}</span></div>
+                                            <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2"><span className="text-sm font-bold">BUGIS Total</span> <span className="font-mono">{settBugis.toLocaleString()}</span></div>
+                                            <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2"><span className="text-sm font-bold">RAHMAN Total</span> <span className="font-mono">{settRahman.toLocaleString()}</span></div>
+                                            <div className="flex justify-between items-center"><span className="text-sm font-bold">IBRAHIM Total</span> <span className="font-mono">{settIbrahim.toLocaleString()}</span></div>
+                                        </div>
                                     </div>
                                     <div className="space-y-4">
-                                        <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Cash Final</h3>
+                                        <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Bank & Cash</h3>
                                         <div className="flex justify-between items-center"><label className="text-gray-700 dark:text-gray-300 font-medium text-sm">Bank Deposit</label><input type="number" {...register('bankDeposit')} className="w-32 p-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-right dark:text-white font-mono" /></div>
                                         <div className="flex justify-between items-center"><label className="text-gray-700 dark:text-gray-300 font-medium text-sm">Currency Deposit</label><input type="number" {...register('currencyDeposit')} className="w-32 p-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-right dark:text-white font-mono" /></div>
                                         <div className="p-5 bg-gray-900 dark:bg-black text-white rounded-xl text-center shadow-lg mt-4 border border-gray-700">
@@ -386,14 +386,14 @@ export default function MoneyPage() {
                                         <p className="mt-3 font-bold text-gray-900 dark:text-white text-right border-t dark:border-gray-700 pt-2">Total: {Math.round(totalCashDenom).toLocaleString()}</p>
                                     </div>
                                     <div>
-                                        <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Foreign</h3>
+                                        <h3 className="font-bold border-b dark:border-gray-700 pb-2 dark:text-white">Foreign Currency</h3>
                                         <div className="grid grid-cols-1 gap-1">
                                             <div className="flex text-xs font-bold text-gray-400 mb-1">
                                                 <span className="w-12"></span>
                                                 <span className="flex-1 text-center">Amount</span>
                                                 <span className="flex-1 text-center">SAR</span>
                                             </div>
-                                            {['kwd','aed','qar','pkr','idr','try','usd','other'].map(c => (
+                                            {['kwd','aed','qar','pkr','idr'].map(c => (
                                                  <div key={c} className="flex justify-between items-center mb-1.5 p-1.5 hover:bg-gray-50 dark:hover:bg-gray-800 rounded">
                                                      <label className="uppercase w-12 font-bold text-gray-500 text-sm">{c}</label>
                                                      <input type="number" {...register(`foreignCurrency.${c}.amount`)} className="w-[45%] p-1 border bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 rounded text-right dark:text-white text-sm" placeholder="Amt" />
@@ -463,17 +463,28 @@ function PrintViewContent({ r }) {
     const safe = (v) => Number(v||0);
     const fmt = (v) => safe(v).toLocaleString();
     const fmtC = (v) => v ? safe(v).toLocaleString() : '';
+    
     // Fix foreign total safely
     let foreignTotal = 0;
     if(r.foreignCurrency && typeof r.foreignCurrency === 'object') {
-       // Check if nested style or flat
        Object.values(r.foreignCurrency).forEach(val => {
            if(typeof val === 'object' && val.sar) foreignTotal += safe(val.sar);
-           else if (typeof val === 'number') foreignTotal += val; // fallback
+           else if (typeof val === 'number') foreignTotal += val;
        });
     }
     const cashTotal = safe(r.cashDenominations?.totalCash);
+    
+    // Total Cash in SAR is primarily Local Cash + Foreign Cash SAR
     const totalCashInSar = cashTotal + foreignTotal;
+
+    // Company Settlements Read
+    const settAlfiyah = safe(r.companySettlement?.alfiyah) || (safe(r.revenue?.departureAlfiyah) + safe(r.revenue?.arrivalAlfiyah));
+    const settBugis = safe(r.companySettlement?.bugis) || (safe(r.revenue?.departureBugis) + safe(r.revenue?.arrivalBugis));
+    const settRahman = safe(r.companySettlement?.rahman) || (safe(r.revenue?.departureRahman) + safe(r.revenue?.arrivalRahman));
+    const settIbrahim = safe(r.companySettlement?.ibrahim) || (safe(r.revenue?.departureIbrahim) + safe(r.revenue?.arrivalIbrahim));
+
+    // Calculate CR if missing
+    const totalCR = safe(r.totalArrivalDepartureCR) || (settAlfiyah+settBugis+settRahman+settIbrahim);
 
     return (
         <>
@@ -491,11 +502,11 @@ function PrintViewContent({ r }) {
                    <div className="bg-gray-300 font-bold text-center border-b border-black py-1">Cash Sales</div>
                    <div className="flex-1">
                        {[
-                           ['Groups Departure ALFIYAH:', r.revenue?.groupsDepartureAlfiyah], ['Groups Arrival ALFIYAH:', r.revenue?.groupsArrivalAlfiyah],
-                           ['Groups Departure RAHMAN:', r.revenue?.groupsDepartureRahman], ['Groups Arrival RAHMAN:', r.revenue?.groupsArrivalRahman],
-                           ['Groups Departure BUGIS:', r.revenue?.groupsDepartureBugis], ['Groups Arrival BUGIS:', r.revenue?.groupsArrivalBugis],
-                           ['Groups Arrival IBRAHIM:', r.revenue?.groupsArrivalIbrahim], ['Groups Departure IBRAHIM:', r.revenue?.groupsDepartureIbrahim],
-                           ['Groups Departure:', r.revenue?.groupsDepartureGeneric], ['Groups Arrival:', r.revenue?.groupsArrivalGeneric],
+                           ['Departure ALFIYAH:', r.revenue?.departureAlfiyah], ['Arrival ALFIYAH:', r.revenue?.arrivalAlfiyah],
+                           ['Departure RAHMAN:', r.revenue?.departureRahman], ['Arrival RAHMAN:', r.revenue?.arrivalRahman],
+                           ['Departure BUGIS:', r.revenue?.departureBugis], ['Arrival BUGIS:', r.revenue?.arrivalBugis],
+                           ['Arrival IBRAHIM:', r.revenue?.arrivalIbrahim], ['Departure IBRAHIM:', r.revenue?.departureIbrahim],
+                           ['Departure:', r.revenue?.departureGeneric], ['Arrival:', r.revenue?.arrivalGeneric],
                            ['Zamzam:', r.revenue?.zamzam], ['B. Zamzam:', r.revenue?.bZamzam],
                            ['Passenger Collection:', r.revenue?.passengerCollection], ['Porter Collection:', r.revenue?.porterCollection],
                            ['Trolley:', r.revenue?.trolley],
@@ -537,7 +548,7 @@ function PrintViewContent({ r }) {
                        </div>
                        
                        <div className="bg-gray-300 font-bold text-center border-b border-black py-1 text-[10px]">Company Settlement</div>
-                       {[['Groups ARR/DEP ALFIYAH:', r.companySettlement?.groupsArrDepAlfiyah], ['Groups ARR/DEP BUGIS:', r.companySettlement?.groupsArrDepBugis], ['Groups ARR/DEP RAHMAN:', r.companySettlement?.groupsArrDepRahman], ['Groups ARR/DEP IBRAHIM:', r.companySettlement?.groupsArrDepIbrahim]].map(([l, v], i) => (
+                       {[['ALFIYAH:', settAlfiyah], ['BUGIS:', settBugis], ['RAHMAN:', settRahman], ['IBRAHIM:', settIbrahim]].map(([l, v], i) => (
                            <div key={i} className="flex border-b border-black h-[18px] items-center text-[10px]">
                                <div className="w-[65%] px-1 border-r border-black h-full flex items-center">{l}</div>
                                <div className="w-[35%] text-right px-1 font-mono flex items-center justify-end">{fmtC(v)}</div>
@@ -546,7 +557,7 @@ function PrintViewContent({ r }) {
                        
                        <div className="flex border-b border-black h-[20px] items-center font-bold text-[10px]">
                            <div className="w-[65%] text-right pr-2 px-1 border-r border-black h-full flex items-center justify-end">Total Arrival/Departure CR.</div>
-                           <div className="w-[35%] text-right px-1 flex items-center justify-end">{fmt(r.totalArrivalDepartureCR)}</div>
+                           <div className="w-[35%] text-right px-1 flex items-center justify-end">{fmt(totalCR)}</div>
                        </div>
                        <div className="flex border-b border-black h-[20px] items-center font-bold text-[10px]">
                            <div className="w-[65%] text-right pr-2 px-1 border-r border-black h-full flex items-center justify-end">Total Bank & Currency</div>
@@ -574,7 +585,7 @@ function PrintViewContent({ r }) {
                    <div className="bg-gray-200 font-bold text-center border-b border-black h-[24px] flex items-center justify-center text-[10px]">Total Cash</div>
                    
                    <div className="bg-gray-300 font-bold text-center border-b border-black py-1 text-[10px]">Foreign Currency</div>
-                   {['KWD','AED','QAR','PKR','IDR','TRY','USD'].map(c => (
+                   {['KWD','AED','QAR','PKR','IDR'].map(c => (
                        <div key={c} className="flex border-b border-black h-[22px] items-center text-[10px]">
                            <div className="w-14 border-r border-black text-center font-bold">{c}</div>
                            {/* Show Amount Here */}
@@ -598,17 +609,16 @@ function PrintViewContent({ r }) {
                    </div>
                    
                    <div className="bg-gray-300 font-bold text-center border-b border-black py-1 text-[10px]">Amount Received</div>
-                   {['Arrival','Departure','Zamzam'].map((l,i)=><div key={i} className="flex border-b border-black h-[22px] items-center text-[10px]"><div className="w-1/2 px-2 border-r border-black font-bold text-left">{l}:</div><div className="w-14 border-r border-black text-center text-[9px] text-gray-500">SAR</div><div className="flex-1"></div></div>)}
-                   <div className="flex border-b border-black h-[24px] items-center font-bold text-[10px]"><div className="w-1/2 px-2 border-r border-black text-left">Total Cash</div><div className="w-14 border-r border-black text-center text-[9px] text-gray-500">SAR</div><div className="flex-1"></div></div>
+                   {['Arrival','Departure','Zamzam','Total Cash'].map((l,i)=><div key={i} className="flex border-b border-black h-[22px] items-center text-[10px]"><div className="w-1/2 px-2 border-r border-black font-bold text-left">{l}:</div><div className="w-14 border-r border-black text-center text-[9px] text-gray-500">SAR</div><div className="flex-1"></div></div>)}
                </div>
            </div>
            
            <div className="mt-4 text-[10px] space-y-6">
                 <div className="flex font-bold justify-between max-w-2xl">
-                    <span>Total Emp: {r.staffStats?.totalEmp}</span> <span>Absent: {r.staffStats?.empAbsent}</span> <span>Leave: {r.staffStats?.empOnLeave}</span> <span>Present: {r.staffStats?.empPresent}</span>
+                    <span>Total Emp: {r.staffStats?.totalEmp}</span> <span>Emp Absent: {r.staffStats?.empAbsent}</span> <span>Emp on Leave: {r.staffStats?.empOnLeave}</span> <span>Emp Present: {r.staffStats?.empPresent}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-10">
-                    <div className="flex justify-between items-end"><span>Submitted By:</span> <span className="border-b border-black flex-1 ml-2 text-center">{r.submittedBy?.name}</span></div>
+                    <div className="flex justify-between items-end"><span>Submitted By:</span> <span className="border-b border-black flex-1 ml-2 text-center">{r.submittedBy?.name || '________________'}</span></div>
                     <div className="flex justify-between items-end"><span>Signature:</span> <span className="border-b border-black flex-1 ml-2"></span></div>
                 </div>
                 <div className="grid grid-cols-2 gap-10">
