@@ -24,7 +24,7 @@ export async function POST(req) {
       nationalId,
       mobile,
       password: hashedPassword,
-      role: 'User',
+      role: 'Employee',
     });
 
     return NextResponse.json({ message: 'User created successfully' }, { status: 201 });
