@@ -6,62 +6,60 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req) {
   try {
-    // 1. Connect to Database
     await dbConnect();
 
-    // 2. Get Data from Request
+    // 1. Get Data
     const body = await req.json();
-    
-    // 🔍 LOG: یہاں آپ کو نظر آئے گا کہ فرنٹ اینڈ کیا بھیج رہا ہے
     console.log("👉 Incoming Signup Data:", body); 
 
-    const { name, nationalId, mobile, email, password, iqamaNumber, role } = body;
+    const { name, nationalId, mobile, email, password, role } = body;
 
-    // 3. Validation (چیک کریں کہ ضروری ڈیٹا موجود ہے)
-    // نوٹ: آپ کے Schema میں iqamaNumber ضروری (Required) ہے
-    if (!iqamaNumber || !password || !name) {
-      console.log("❌ Missing Fields: Name, Password or IqamaNumber is missing");
+    // 2. Validation
+    // اب ہم چیک کریں گے کہ nationalId موجود ہے یا نہیں
+    if (!nationalId || !password || !name) {
       return NextResponse.json(
-        { message: 'Missing required fields: Name, Password, and Iqama Number are mandatory.' }, 
+        { message: 'Missing fields: Name, Password, and National ID are required.' }, 
         { status: 400 }
       );
     }
 
-    // 4. Check Duplicate (کیا یہ یوزر پہلے سے موجود ہے؟)
-    // ہم موبائل، ای میل، اور اقامہ نمبر تینوں چیک کریں گے
+    // 3. Check Duplicate
+    // موبائل، ای میل، یا نیشنل آئی ڈی پہلے سے تو نہیں؟
     const existingUser = await User.findOne({
       $or: [
-        { mobile: mobile || "N/A" },         // اگر موبائل خالی ہے تو اسے اگنور کرے گا (Sparse کی وجہ سے)
-        { email: email || "N/A" },           
-        { iqamaNumber: iqamaNumber }         // اقامہ نمبر یونیک ہونا ضروری ہے
+        { mobile: mobile || "N/A" },
+        { email: email || "N/A" },
+        { nationalId: nationalId },     // نیشنل آئی ڈی چیک کریں
+        { iqamaNumber: nationalId }     // اقامہ بھی وہی ہے، اس لیے وہ بھی چیک کریں
       ]
     });
 
     if (existingUser) {
-      console.log("⚠️ User Already Exists:", existingUser.email || existingUser.mobile);
       return NextResponse.json(
-        { message: 'User already exists with this Mobile, Email, or Iqama Number' }, 
+        { message: 'User already exists with this Mobile or ID' }, 
         { status: 400 }
       );
     }
 
-    // 5. Hash Password
+    // 4. Hash Password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 6. Create User
+    // 5. Create User
+    // یہاں ہم nationalId کو ہی iqamaNumber میں ڈال رہے ہیں
     const newUser = await User.create({
       name,
       email,
       mobile,
-      nationalId,
-      iqamaNumber, // یہ فیلڈ Schema میں Required ہے، اس لیے اسے پاس کرنا ضروری ہے
       password: hashedPassword,
-      //role: role || 'Employee', // اگر رول نہیں آیا تو بائی ڈیفالٹ Employee سیٹ ہوگا
-     // status: 'In Work'
+      //role: role || 'Employee',
+    //  status: 'In Work',
+      
+      // ✅ یہ ہے آپ کا حل:
+      nationalId: nationalId,   // نیشنل آئی ڈی میں بھی وہی ویلیو
+      iqamaNumber: nationalId,  // اقامہ نمبر میں بھی وہی ویلیو (کیونکہ یہ Required ہے)
     });
 
-    // ✅ LOG: کامیابی کا میسج
-    console.log("✅ User Created Successfully:", newUser._id);
+    console.log("✅ User Created:", newUser._id);
 
     return NextResponse.json(
       { message: 'User created successfully', user: newUser }, 
@@ -69,12 +67,9 @@ export async function POST(req) {
     );
 
   } catch (error) {
-    // ❌ LOG: اگر کوئی اصلی ایرر آیا (جیسے Schema Error)
-    console.error("🔥 Server Error Details:", error);
-    
-    // یوزر کو ایرر میسج بھیجیں
+    console.error("🔥 Error:", error);
     return NextResponse.json(
-      { message: error.message || 'Internal Server Error' }, 
+      { message: error.message || 'Server Error' }, 
       { status: 500 }
     );
   }
