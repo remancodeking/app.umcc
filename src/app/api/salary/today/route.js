@@ -7,6 +7,7 @@ import Attendance from "@/models/Attendance";
 import SalesReport from "@/models/SalesReport";
 // Ensure Room is registered/imported if you have a separate model file
 import Room from "@/models/Room"; 
+import Recovery from "@/models/Recovery"; // Import Recovery 
 
 const connectDB = async () => {
   if (mongoose.connection.readyState >= 1) return;
@@ -55,6 +56,37 @@ export async function GET(req) {
         }
     });
 
+    // 4.5 Fetch Active Recoveries
+    // We import Recovery model dynamically if needed, or at top. 
+    // Assuming imported at top or using mongoose.model
+    let Recovery;
+    try {
+        Recovery = mongoose.model('Recovery');
+    } catch {
+        const RecoverySchema = new mongoose.Schema({ /* partial schema for validation if fetch fails? No, trust it exists */ }); 
+        // We really should import it properly at top
+    }
+    
+    // Better: Import it properly at the top of file
+    
+    // 5. Map Data
+    const recoveryMap = {};
+    if (mongoose.models.Recovery) {
+        const activeRecoveries = await mongoose.models.Recovery.find({ 
+            status: 'Active',
+            user: { $in: allUsers.map(u => u._id) }
+        });
+        activeRecoveries.forEach(r => {
+             // If multiple, maybe sum? For now assume one active per user
+             recoveryMap[r.user.toString()] = {
+                 _id: r._id,
+                 reason: r.reason,
+                 remainingAmount: r.totalAmount - (r.paidAmount || 0),
+                 deductionRate: r.deductionRate || 100
+             };
+        });
+    }
+
     const combinedData = allUsers.map(u => {
         const userId = u._id.toString();
         const status = attendanceMap[userId] || 'Absent'; 
@@ -65,8 +97,9 @@ export async function GET(req) {
             empCode: u.empCode,
             designation: u.designation,
             status: status,
-            shift: u.shift, // Pass shift to frontend
-            roomNumber: userRoomMap[userId] || 'Unassigned'
+            shift: u.shift,
+            roomNumber: userRoomMap[userId] || 'Unassigned',
+            recovery: recoveryMap[userId] || null // Attach recovery info
         };
     });
 

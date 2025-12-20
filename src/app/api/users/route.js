@@ -81,29 +81,12 @@ export async function POST(req) {
     // Sanitize designation:
     let finalDesignation = designation ? designation.replace(/\r?\n|\r/g, ' ').trim() : 'Porter';
     
-    // Explicitly nullify optional sparse unique fields if they are empty strings
-    const safeEmpCode = empCode && String(empCode).trim() !== "" ? empCode : undefined;
-    const safeMobile = mobile && String(mobile).trim() !== "" ? mobile : undefined;
-    const safeEmail = email && String(email).trim() !== "" ? email : undefined;
-
-    const VALID_DESIGNATIONS = [
-        'Porter', 'Team Leader', 'Supervisor', 'Ground Operation Manager', 'GID', 
-        'Hotel Incharge', 'Cashier', 'Operation Manager', 'Transport Incharge'
-    ];
-
-    const match = VALID_DESIGNATIONS.find(d => d.toLowerCase() === finalDesignation.toLowerCase());
-    if (match) {
-        finalDesignation = match;
-    }
-
-    const newUser = await User.create({
+    // Construct user object dynamically to avoid sending undefined/null for sparse fields
+    const newUserData = {
       name,
-      mobile: safeMobile,
-      email: safeEmail,
       password: hashedPassword,
       role: role || 'Employee',
       sm: nextSM,
-      empCode: safeEmpCode,
       designation: finalDesignation,
       shift,
       iqamaNumber, 
@@ -111,7 +94,20 @@ export async function POST(req) {
       status: status || 'In Work',
       terminal,
       isOnboarding: true // Force password change on first login
-    });
+    };
+
+    // Only add sparse unique fields if they definitely have a value
+    if (mobile && String(mobile).trim().length > 0) {
+        newUserData.mobile = String(mobile).trim();
+    }
+    if (email && String(email).trim().length > 0) {
+        newUserData.email = String(email).trim();
+    }
+    if (empCode && String(empCode).trim().length > 0) {
+        newUserData.empCode = String(empCode).trim();
+    }
+
+    const newUser = await User.create(newUserData);
 
     return NextResponse.json(newUser, { status: 201 });
   } catch (error) {

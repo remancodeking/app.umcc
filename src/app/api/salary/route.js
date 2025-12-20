@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import SalaryReport from "@/models/SalaryReport";
+import Recovery from "@/models/Recovery"; // Ensure registration
 import mongoose from "mongoose";
 
 // Ensure DB connection
@@ -45,6 +46,43 @@ export async function POST(req) {
     };
 
     const report = await SalaryReport.create(reportPayload);
+
+    // --- Process Recoveries ---
+    // Iterate records to find deductions with recoveryId and update the Recovery model
+    try {
+        const Recovery = mongoose.models.Recovery || mongoose.model('Recovery');
+        
+        for (const record of report.records) {
+            if (record.deductions && record.deductions.length > 0) {
+                for (const ded of record.deductions) {
+                    if (ded.recoveryId) {
+                        const rec = await Recovery.findById(ded.recoveryId);
+                        if (rec) {
+                            rec.paidAmount = (rec.paidAmount || 0) + (ded.amount || 0);
+                            
+                            // Check Completion
+                            if (rec.paidAmount >= rec.totalAmount) {
+                                rec.status = 'Completed';
+                            }
+                            
+                            // Add History
+                            rec.history.push({
+                                amount: ded.amount,
+                                date: new Date(),
+                                salaryReportId: report._id
+                            });
+                            
+                            await rec.save();
+                        }
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error updating recoveries:", err);
+        // We do typically not fail the whole request if this side-effect fails, but we should log it.
+    }
+
     return NextResponse.json(report, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

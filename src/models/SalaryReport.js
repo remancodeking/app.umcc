@@ -22,6 +22,7 @@ const SalaryReportSchema = new mongoose.Schema(
           {
             reason: { type: String },
             amount: { type: Number },
+            recoveryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recovery' } // Link to Recovery
           }
         ],
         finalAmount: { type: Number, default: 0 }

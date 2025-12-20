@@ -42,7 +42,53 @@ export default function SalaryManagementPage() {
   const [deductionReason, setDeductionReason] = useState("Fine");
   const [deductionAmount, setDeductionAmount] = useState("");
 
-  useEffect(() => { fetchHistory(); }, []);
+
+  // --- Recovery Tab Data ---
+  const [recoveries, setRecoveries] = useState([]);
+  const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
+  const [newRecovery, setNewRecovery] = useState({ userId: "", totalAmount: "", reason: "Loan" });
+  const [allUsersList, setAllUsersList] = useState([]); // For dropdown
+
+  useEffect(() => { fetchHistory(); fetchRecoveries(); }, []);
+
+  const fetchRecoveries = async () => {
+      try {
+          const res = await fetch('/api/recovery');
+          if(res.ok) setRecoveries(await res.json());
+      } catch(e) {}
+  };
+
+  const fetchAllUsers = async () => {
+      if(allUsersList.length > 0) return;
+      try {
+         // Re-use existing endpoint or Users API. We'll use /api/users
+         const res = await fetch('/api/users'); 
+         if(res.ok) setAllUsersList(await res.json());
+      } catch(e) {}
+  };
+
+  useEffect(() => {
+    if(activeTab === 'recovery') fetchAllUsers();
+  }, [activeTab]);
+
+  const handleCreateRecovery = async () => {
+      if(!newRecovery.userId || !newRecovery.totalAmount || !newRecovery.reason) return toast.error("Fill all fields");
+      try {
+          const res = await fetch('/api/recovery', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(newRecovery)
+          });
+          if(res.ok) {
+              toast.success("Recovery Added");
+              setIsRecoveryModalOpen(false);
+              setNewRecovery({ userId: "", totalAmount: "", reason: "Loan" });
+              fetchRecoveries();
+          } else {
+              toast.error("Failed");
+          }
+      } catch(e) { toast.error("Error"); }
+  };
 
   useEffect(() => {
     // Only fetch today's data if we are NOT editing an old report
@@ -102,8 +148,9 @@ export default function SalaryManagementPage() {
               setEmployees(data.employees.map(e => ({
                   ...e,
                   deductions: [], 
-                  netAmount: 0 
+                  netAmount: 0,
                   // roomNumber included from API
+                  autoRecovery: e.recovery || null // Store recovery info for auto-calc
               })));
               setRevenue(Number(data.recommendedRevenue || 0));
           }
@@ -129,6 +176,40 @@ export default function SalaryManagementPage() {
           setPerHeadRate(0);
       }
   }, [revenue, presentCountAll]);
+
+  /* Auto-apply recovery when rate changes */
+  useEffect(() => {
+    if (perHeadRate > 0) {
+       setEmployees(prev => prev.map(e => {
+           // Only apply to Present employees with active recovery
+           if (e.autoRecovery && ['Present', 'On Duty'].includes(e.status)) {
+               const debt = e.autoRecovery.remainingAmount;
+               // Default: Take up to 100% of daily salary, but not more than debt
+               const amountToTake = Math.min(debt, perHeadRate);
+               
+               const reason = `Recovery: ${e.autoRecovery.reason}`;
+               
+               // Remove existing auto-recovery deduction to avoid duplicates/stale values
+               const otherDeductions = e.deductions.filter(d => d.reason !== reason && !d.reason.startsWith('Recovery:'));
+               
+               if (amountToTake > 0) {
+                   return {
+                       ...e,
+                       deductions: [
+                           ...otherDeductions, 
+                           { 
+                               reason, 
+                               amount: Math.floor(amountToTake), // Keep it integer if needed 
+                               recoveryId: e.autoRecovery._id
+                           }
+                       ]
+                   };
+               }
+           }
+           return e;
+       }));
+    }
+  }, [perHeadRate]); // Only re-run when base rate changes
 
   const surplus = (revenue - (perHeadRate * presentCountAll));
 
@@ -266,6 +347,7 @@ export default function SalaryManagementPage() {
            <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
                <button onClick={() => { setActiveTab('history'); setEditingReportId(null); }} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'history' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><History className="h-4 w-4" /> History</button>
                <button onClick={() => { setActiveTab('sheets'); setEditingReportId(null); }} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'sheets' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><ScrollText className="h-4 w-4" /> Notebook</button>
+               <button onClick={() => { setActiveTab('recovery'); setEditingReportId(null); }} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'recovery' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><Scissors className="h-4 w-4" /> Recoveries</button>
                <button onClick={() => setActiveTab('manage')} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'manage' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><Calculator className="h-4 w-4" /> Calculator</button>
            </div>
        </div>
@@ -377,6 +459,127 @@ export default function SalaryManagementPage() {
                </div>
            </div>
        )}
+
+        {/* RECOVERY MANAGEMENT TAB */}
+        {activeTab === 'recovery' && (
+            <div className="space-y-6">
+                 <div className="flex justify-between items-center bg-purple-50 dark:bg-purple-900/10 p-6 rounded-2xl border border-purple-100 dark:border-purple-900/20">
+                     <div>
+                         <h3 className="text-lg font-bold text-purple-900 dark:text-purple-300">Financial Recoveries</h3>
+                         <p className="text-sm text-purple-700 dark:text-purple-400">Manage loans, penalties, and automatic salary deductions.</p>
+                     </div>
+                     <button onClick={()=>setIsRecoveryModalOpen(true)} className="px-5 py-2.5 bg-purple-600 text-white font-bold rounded-xl shadow-lg hover:bg-purple-700 transition-colors flex items-center gap-2">
+                         <DollarSign className="h-4 w-4" /> Add New Recovery
+                     </button>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                     {recoveries.map(rec => (
+                         <div key={rec._id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-6 shadow-sm relative group">
+                             {/* Progress Bar */}
+                             <div className="absolute top-0 left-0 h-1.5 bg-gray-100 dark:bg-gray-800 w-full rounded-t-2xl overflow-hidden">
+                                 <div 
+                                    className={`h-full ${rec.status === 'Completed' ? 'bg-green-500' : 'bg-purple-500'}`} 
+                                    style={{width: `${Math.min(100, ((rec.paidAmount||0)/rec.totalAmount)*100)}%`}}
+                                 ></div>
+                             </div>
+
+                             <div className="flex justify-between items-start mb-4 mt-2">
+                                 <div>
+                                     <h4 className="font-bold text-lg dark:text-white">{rec.user?.name || 'Unknown User'}</h4>
+                                     <p className="text-xs text-gray-500">{rec.user?.empCode}</p>
+                                 </div>
+                                 <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${rec.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
+                                     {rec.status}
+                                 </span>
+                             </div>
+
+                             <div className="space-y-3">
+                                 <div className="flex justify-between">
+                                     <span className="text-xs text-gray-400 font-bold uppercase">Reason</span>
+                                     <span className="text-sm font-bold dark:text-white">{rec.reason}</span>
+                                 </div>
+                                 <div className="flex justify-between">
+                                     <span className="text-xs text-gray-400 font-bold uppercase">Total Owed</span>
+                                     <span className="text-sm font-mono font-bold dark:text-white">{rec.totalAmount.toLocaleString()}</span>
+                                 </div>
+                                 <div className="flex justify-between">
+                                     <span className="text-xs text-gray-400 font-bold uppercase">Paid</span>
+                                     <span className="text-sm font-mono font-bold text-green-600">{(rec.paidAmount||0).toLocaleString()}</span>
+                                 </div>
+                                 <div className="flex justify-between pt-2 border-t dark:border-gray-800">
+                                     <span className="text-xs text-gray-400 font-bold uppercase">Remaining</span>
+                                     <span className="text-lg font-mono font-black text-rose-600">
+                                         {Math.max(0, rec.totalAmount - (rec.paidAmount||0)).toLocaleString()}
+                                     </span>
+                                 </div>
+                             </div>
+                         </div>
+                     ))}
+                     {recoveries.length === 0 && (
+                         <div className="col-span-full py-10 text-center text-gray-400 font-medium bg-gray-50 dark:bg-gray-900 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800">
+                             No active recoveries found.
+                         </div>
+                     )}
+                 </div>
+            </div>
+        )}
+
+        {/* RECOVERY MODAL */}
+        {isRecoveryModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:hidden">
+                <div className="bg-white dark:bg-gray-900 w-full max-w-md rounded-2xl shadow-2xl p-6">
+                     <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                         <DollarSign className="h-5 w-5"/> New Recovery Entry
+                     </h3>
+                     <div className="space-y-4">
+                         <div>
+                             <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Employee</label>
+                             <select 
+                                 value={newRecovery.userId} 
+                                 onChange={(e) => setNewRecovery({...newRecovery, userId: e.target.value})}
+                                 className="w-full p-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                             >
+                                 <option value="">Select Employee...</option>
+                                 {allUsersList.map(u => (
+                                     <option key={u._id} value={u._id}>{u.name} ({u.empCode})</option>
+                                 ))}
+                             </select>
+                         </div>
+                         <div>
+                             <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Reason</label>
+                             <div className="flex flex-wrap gap-2 mb-2">
+                                 {['Loan', 'Fine', 'Haram Work', 'Damage', 'Advance'].map(r => (
+                                     <button key={r} onClick={()=>setNewRecovery({...newRecovery, reason: r})} className={`px-2 py-1 text-xs font-bold border rounded ${newRecovery.reason===r?'bg-purple-600 text-white border-purple-600':'text-gray-500 border-gray-200'}`}>{r}</button>
+                                 ))}
+                             </div>
+                             <input 
+                                 type="text" 
+                                 value={newRecovery.reason} 
+                                 onChange={(e) => setNewRecovery({...newRecovery, reason: e.target.value})}
+                                 className="w-full p-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                                 placeholder="Reason details..." 
+                             />
+                         </div>
+                         <div>
+                             <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Total Amount to Recover</label>
+                             <input 
+                                 type="number" 
+                                 value={newRecovery.totalAmount} 
+                                 onChange={(e) => setNewRecovery({...newRecovery, totalAmount: e.target.value})}
+                                 className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-bold text-xl outline-none focus:ring-2 focus:ring-purple-500"
+                                 placeholder="0.00" 
+                             />
+                         </div>
+                         
+                         <div className="pt-4 flex gap-2">
+                             <button onClick={()=>setIsRecoveryModalOpen(false)} className="flex-1 py-2.5 font-bold text-gray-500 hover:bg-gray-100 rounded-xl">Cancel</button>
+                             <button onClick={handleCreateRecovery} className="flex-1 py-2.5 font-bold bg-purple-600 text-white rounded-xl shadow-lg hover:bg-purple-700">Add Recovery</button>
+                         </div>
+                     </div>
+                </div>
+            </div>
+        )}
 
        {/* MANAGE (CALCULATOR) TAB */}
        {activeTab === 'manage' && (
