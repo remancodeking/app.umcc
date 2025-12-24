@@ -38,23 +38,30 @@ export default function SalarySlipsView({ report, onClose }) {
         window.print();
     };
 
-    const handleDownloadPDF = () => {
-        if (!isScriptLoaded || !window.html2pdf) {
-            alert("PDF Generator is initializing... please wait.");
+    const handleDownloadPDF = async () => {
+        if (!window.html2pdf) {
+            alert("PDF Library is still loading... please try again in 5 seconds.");
             return;
         }
 
         setIsGeneratingPdf(true);
         const element = document.getElementById('salary-slips-content');
         const opt = {
-            margin: [5, 5, 5, 5], // mm
+            margin: [5, 5, 5, 5],
             filename: `Salary_Slips_${report.date}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true },
+            html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
 
-        window.html2pdf().set(opt).from(element).save().then(() => setIsGeneratingPdf(false));
+        try {
+            await window.html2pdf().set(opt).from(element).save();
+        } catch (e) {
+            console.error(e);
+            alert("PDF Generation Failed. Use Print button.");
+        } finally {
+            setIsGeneratingPdf(false);
+        }
     };
 
     return (
@@ -63,27 +70,37 @@ export default function SalarySlipsView({ report, onClose }) {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 5mm;
+            margin: 5mm; 
           }
-          body {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
+          html, body {
+            height: auto !important;
+            min-height: 100vh !important;
+            overflow: visible !important;
+            background: white !important;
           }
           body * {
             visibility: hidden;
+            height: 0; 
           }
           #salary-slips-view-root,
           #salary-slips-view-root * {
             visibility: visible;
+            height: auto;
           }
           #salary-slips-view-root {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 10mm 0 0 0 !important; /* Added 10mm top padding to prevent cut-off */
             background: white !important;
-            padding: 0 !important;
+            z-index: 99999 !important;
+            overflow: visible !important;
+            display: block !important;
           }
+          
+          nav, aside, header, .sidebar { display: none !important; }
           .print\\:hidden { display: none !important; }
 
           /* Grid Layout */
@@ -91,7 +108,7 @@ export default function SalarySlipsView({ report, onClose }) {
              display: grid !important;
              grid-template-columns: repeat(${gridCols}, 1fr) !important;
              gap: 3mm !important;
-             align-items: stretch !important; /* Stretch to match height */
+             align-items: stretch !important; 
              width: 100% !important;
           }
           .salary-card {

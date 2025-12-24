@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
     Briefcase, History, Calculator, Users, DollarSign,
     Calendar, CheckCircle, AlertCircle, Scissors, X, Save, Printer, Eye,
-    FileText, ScrollText, Trash2, Pencil, Upload
+    FileText, ScrollText, Trash2, Pencil, Upload, Search
 } from "lucide-react";
 import toast from "react-hot-toast";
 import * as XLSX from 'xlsx';
@@ -44,6 +44,7 @@ export default function SalaryManagementPage() {
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [deductionReason, setDeductionReason] = useState("Fine");
     const [deductionAmount, setDeductionAmount] = useState("");
+    const [searchTerm, setSearchTerm] = useState(""); // Add Search State
 
 
     // --- Recovery Tab Data ---
@@ -284,9 +285,19 @@ export default function SalaryManagementPage() {
 
     // --- Calculations ---
     // Apply Shift Filtering Logic
+    // Apply Shift Filtering & Search Logic
     const filteredEmployees = employees.filter(e => {
-        if (!userShift || userShift === 'All') return true;
-        return e.shift === userShift;
+        // Shift Filter
+        const shiftMatch = (isAdmin || !userShift || userShift === 'All') ? true : e.shift === userShift;
+
+        // Search Filter
+        const searchLower = searchTerm.toLowerCase();
+        const searchMatch = !searchTerm ||
+            e.name.toLowerCase().includes(searchLower) ||
+            e.empCode?.toLowerCase().includes(searchLower) ||
+            e.roomNumber?.toString().includes(searchLower);
+
+        return shiftMatch && searchMatch;
     });
 
     const presentEmployeesAll = employees.filter(e => ['Present', 'On Duty'].includes(e.status));
@@ -757,9 +768,21 @@ export default function SalaryManagementPage() {
                     </div>
 
                     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
-                        <div className="p-4 border-b dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-                            <h3 className="font-bold">Employee List {userShift && userShift !== 'All' ? `(${userShift})` : ''}</h3>
-                            <div className="flex gap-2"><input type="date" value={todayDate} onChange={(e) => setTodayDate(e.target.value)} className="bg-transparent font-bold text-sm outline-none dark:text-white" /></div>
+                        <div className="p-4 border-b dark:border-gray-800 flex flex-col md:flex-row justify-between items-center bg-gray-50 dark:bg-gray-900 gap-4">
+                            <h3 className="font-bold whitespace-nowrap">Employee List {userShift && userShift !== 'All' ? `(${userShift})` : ''}</h3>
+                            <div className="flex gap-2 w-full md:w-auto">
+                                <div className="relative w-full md:w-64">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        placeholder="Search by name, code..."
+                                        className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border-none rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-[var(--primary)]/20"
+                                    />
+                                </div>
+                                <input type="date" value={todayDate} onChange={(e) => setTodayDate(e.target.value)} className="bg-transparent font-bold text-sm outline-none dark:text-white" />
+                            </div>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">

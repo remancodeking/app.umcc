@@ -6,54 +6,54 @@ import User from "@/models/User";
 import mongoose from "mongoose";
 
 const connectDB = async () => {
-  if (mongoose.connection.readyState >= 1) return;
-  await mongoose.connect(process.env.MONGODB_URI);
+    if (mongoose.connection.readyState >= 1) return;
+    await mongoose.connect(process.env.MONGODB_URI);
 };
 
 export async function GET(req) {
-  try {
-    await connectDB();
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    try {
+        await connectDB();
+        const session = await getServerSession(authOptions);
+        if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { searchParams } = new URL(req.url);
-    const date = searchParams.get("date");
-    const shift = searchParams.get("shift");
+        const { searchParams } = new URL(req.url);
+        const date = searchParams.get("date");
+        const shift = searchParams.get("shift");
 
-    if (!date) return NextResponse.json({ error: "Date required" }, { status: 400 });
+        if (!date) return NextResponse.json({ error: "Date required" }, { status: 400 });
 
-    // Fetch all users (sorted)
-    const users = await User.find({ role: { $ne: 'Admin' } }).sort({ name: 1 }).select("name role empCode mobile designation shift terminal");
+        // Fetch all users (sorted)
+        const users = await User.find({}).sort({ name: 1 }).select("name role empCode mobile designation shift terminal");
 
-    const query = { date };
-    if (shift && shift !== 'All') {
-        query.shift = shift;
-    }
+        const query = { date };
+        if (shift && shift !== 'All') {
+            query.shift = shift;
+        }
 
-    const attendanceRecords = await Attendance.find(query);
+        const attendanceRecords = await Attendance.find(query);
 
-    // Merge record with user
-    const data = users.map(user => {
-        const record = attendanceRecords.find(r => r.user.toString() === user._id.toString());
-        return {
-            user: user,
-            attendance: record || null
+        // Merge record with user
+        const data = users.map(user => {
+            const record = attendanceRecords.find(r => r.user.toString() === user._id.toString());
+            return {
+                user: user,
+                attendance: record || null
+            };
+        });
+
+        // Counts
+        const stats = {
+            total: users.length,
+            present: attendanceRecords.filter(r => ['Present', 'On Duty'].includes(r.status)).length,
+            absent: attendanceRecords.filter(r => r.status === 'Absent').length,
+            leave: attendanceRecords.filter(r => r.status === 'Leave').length,
         };
-    });
 
-    // Counts
-    const stats = {
-        total: users.length,
-        present: attendanceRecords.filter(r => ['Present', 'On Duty'].includes(r.status)).length,
-        absent: attendanceRecords.filter(r => r.status === 'Absent').length,
-        leave: attendanceRecords.filter(r => r.status === 'Leave').length,
-    };
+        return NextResponse.json({ data, stats });
 
-    return NextResponse.json({ data, stats });
-
-  } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+    } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }
 
 export async function POST(req) {
@@ -67,12 +67,12 @@ export async function POST(req) {
 
         // BULK UPDATE
         if (userIds && Array.isArray(userIds)) {
-             const operations = userIds.map(uid => ({
+            const operations = userIds.map(uid => ({
                 updateOne: {
                     filter: { user: uid, date: date },
-                    update: { 
-                        $set: { 
-                            status: status, 
+                    update: {
+                        $set: {
+                            status: status,
                             shift: shift || 'A',
                             notes: notes || '',
                             // Only set clockIn if strictly marking Present and it wasn't there? 
@@ -92,8 +92,8 @@ export async function POST(req) {
 
         if (record) {
             record.status = status;
-            if(shift) record.shift = shift;
-            if(notes !== undefined) record.notes = notes;
+            if (shift) record.shift = shift;
+            if (notes !== undefined) record.notes = notes;
             await record.save();
         } else {
             record = await Attendance.create({
@@ -121,7 +121,7 @@ export async function DELETE(req) {
 
         const { searchParams } = new URL(req.url);
         const date = searchParams.get('date');
-        const ids = searchParams.get('ids'); 
+        const ids = searchParams.get('ids');
 
         if (!date || !ids) return NextResponse.json({ error: "Date and IDs required" }, { status: 400 });
 
@@ -134,6 +134,6 @@ export async function DELETE(req) {
         return NextResponse.json({ message: "Deleted successfully", count: result.deletedCount });
 
     } catch (error) {
-         return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
