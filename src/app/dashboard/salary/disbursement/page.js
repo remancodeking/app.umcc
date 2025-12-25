@@ -259,7 +259,7 @@ export default function DisbursementPage() {
                       <p className="text-xs font-bold text-green-600 uppercase">Total Paid</p>
                       <div className="flex justify-between items-end">
                            <p className="text-2xl font-black text-green-700 dark:text-green-300">
-                              {filteredRooms.filter(r => r.isPaid).reduce((acc, r) => acc + r.totalAmount, 0).toLocaleString()}
+                               {filteredRooms.filter(r => r.isPaid).reduce((acc, r) => acc + r.totalAmount, 0).toLocaleString()}
                            </p>
                            <CheckCircle className="h-5 w-5 text-green-400" />
                       </div>
@@ -284,64 +284,77 @@ export default function DisbursementPage() {
                   </div>
               </div>
 
-              {/* Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {/* Grid - 3 Columns Enforced as requested */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredRooms.map((room) => (
-                     <div key={room.roomNumber} className={`relative p-6 rounded-2xl border transition-all ${
+                     <div key={room.roomNumber} className={`relative p-6 rounded-2xl border transition-all flex flex-col justify-between min-h-[300px] ${
                          room.isPaid 
-                         ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800' 
-                         : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:shadow-lg'
+                         ? 'bg-gradient-to-br from-green-50 to-white dark:from-green-900/20 dark:to-gray-900 border-green-200 dark:border-green-800 shadow-sm' 
+                         : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:shadow-xl'
                      }`}>
-                        {room.isPaid && (
-                           <div className="absolute top-4 right-4">
-                               <div className="bg-green-500 text-white p-1 rounded-full"><CheckCircle className="h-4 w-4"/></div>
-                           </div>
-                        )}
-                        
-                        <h3 className="text-sm font-bold text-gray-500 uppercase mb-1">Room Number</h3>
-                        <p className="text-3xl font-black mb-4 dark:text-white">{room.roomNumber}</p> 
-    
-                        <div className="flex justify-between items-end mb-6">
-                            <div>
-                                <p className="text-xs font-bold text-gray-400 uppercase">Staff</p>
-                                <p className="font-bold flex items-center gap-1"><Users className="h-3 w-3"/> {room.employees.length}</p>
+                        <div className="mb-4">
+                            {room.isPaid && (
+                                <div className="absolute top-4 right-4 animate-in zoom-in">
+                                    <div className="bg-green-500 text-white p-1 rounded-full shadow-lg shadow-green-500/30"><CheckCircle className="h-5 w-5"/></div>
+                                </div>
+                            )}
+                            
+                            <div className="flex items-baseline gap-2 mb-2">
+                                <h3 className="text-xs font-extrabold text-gray-400 uppercase tracking-widest">Room</h3>
+                                <p className="text-4xl font-black dark:text-white">{room.roomNumber}</p> 
                             </div>
-                            <div className="text-right">
-                                <p className="text-xs font-bold text-gray-400 uppercase">Total</p>
-                                <p className={`text-xl font-black ${room.isPaid ? 'text-green-600' : 'text-gray-900 dark:text-white'}`}>
-                                    {Number(room.totalAmount).toLocaleString()} <span className="text-xs font-normal text-gray-400">SAR</span>
-                                </p>
+        
+                            {/* Employee List - Showing 'dots' */}
+                            <div className="space-y-1 mb-4">
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Occupants ({room.employees.length})</p>
+                                <div className="grid grid-cols-1 gap-1">
+                                    {room.employees.map((e, idx) => (
+                                        <div key={idx} className="flex justify-between items-center text-xs font-bold p-1 hover:bg-black/5 rounded">
+                                            <span className="truncate">{e.name.split(' ')[0]} {e.name.split(' ')[1] || ''}</span>
+                                            <span className="text-gray-400 font-mono text-[10px]">{e.empCode}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
     
-                        {room.isPaid ? (
-                            <div className="bg-white/50 dark:bg-black/20 p-3 rounded-xl text-xs space-y-1">
-                                <div className="flex justify-between"><span className="text-gray-500">Status</span><span className="font-bold text-green-600 uppercase">Paid</span></div>
-                                <div className="flex justify-between"><span className="text-gray-500">Receiver</span><span className="font-bold truncate max-w-[100px]">{room.receiverName}</span></div>
-                                <div className="flex justify-between"><span className="text-gray-500">Receipt</span><span className="font-mono">{room.receiptId}</span></div>
-                                <button onClick={() => {
-                                     const receiver = room.employees.find(e => e.name === room.receiverName) || { name: room.receiverName };
-                                     setPrintData({
-                                         receiptId: room.receiptId,
-                                         date: room.paidAt,
-                                         roomNumber: room.roomNumber,
-                                         receiverName: room.receiverName,
-                                         employees: room.employees,
-                                         totalAmount: room.totalAmount,
-                                         adminName: session?.user?.name || 'Admin'
-                                     });
-                                }} className="w-full mt-2 py-1.5 bg-black text-white rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-gray-800">
-                                     <Printer className="h-3 w-3" /> Reprint Receipt
-                                </button>
+                        <div>
+                            <div className="flex justify-between items-end mb-4 border-t border-dashed pt-4 dark:border-gray-700">
+                                <p className="text-xs font-bold text-gray-400 uppercase">Total Payout</p>
+                                <p className={`text-2xl font-black ${room.isPaid ? 'text-green-600' : 'text-gray-900 dark:text-white'}`}>
+                                    {Number(room.totalAmount).toLocaleString()} <span className="text-xs font-normal text-gray-400">SAR</span>
+                                </p>
                             </div>
-                        ) : (
-                            <button 
-                               onClick={() => openPaymentModal(room)}
-                               className="w-full py-3 bg-[var(--primary)] text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:-translate-y-1 transition-transform flex items-center justify-center gap-2"
-                            >
-                               Disburse Payment <ArrowRight className="h-4 w-4" />
-                            </button>
-                        )}
+        
+                            {room.isPaid ? (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-green-700 bg-green-100 dark:bg-green-900/30 p-2 rounded-lg">
+                                        <span className="uppercase">Received By:</span>
+                                        <span className="truncate">{room.receiverName}</span>
+                                    </div>
+                                    <button onClick={() => {
+                                         setPrintData({
+                                             receiptId: room.receiptId,
+                                             date: room.paidAt,
+                                             roomNumber: room.roomNumber,
+                                             receiverName: room.receiverName,
+                                             employees: room.employees,
+                                             totalAmount: room.totalAmount,
+                                             adminName: session?.user?.name || 'Admin'
+                                         });
+                                    }} className="w-full py-2 bg-black text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 text-sm">
+                                         <Printer className="h-3 w-3" /> Receipt
+                                    </button>
+                                </div>
+                            ) : (
+                                <button 
+                                   onClick={() => openPaymentModal(room)}
+                                   className="w-full py-3 bg-[var(--primary)] text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:-translate-y-1 transition-transform flex items-center justify-center gap-2 text-sm"
+                                >
+                                   Disburse Pay <ArrowRight className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
                      </div>
                   ))}
               </div>
@@ -370,7 +383,8 @@ export default function DisbursementPage() {
                     </div>
                     
                     <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-950/50 print:bg-white print:p-0">
-                        <table className="w-full text-left text-sm border-collapse">
+                         {/* This table is not the one user complained about, but I'll ensure it renders nicely */}
+                         <table className="w-full text-left text-sm border-collapse">
                             <thead className="bg-gray-100 dark:bg-gray-800 text-gray-500 uppercase font-bold text-xs sticky top-0 print:static print:bg-gray-200 print:text-black">
                                 <tr>
                                     <th className="px-4 py-3 border dark:border-gray-700 print:border-black">SN</th>
@@ -381,10 +395,10 @@ export default function DisbursementPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                                {paidRooms.length === 0 ? (
+                                {data?.rooms?.filter(r => r.isPaid).length === 0 ? (
                                     <tr><td colSpan="5" className="p-8 text-center text-gray-400 font-bold">No disbursements recorded yet.</td></tr>
                                 ) : (
-                                    paidRooms.map((r, i) => (
+                                    data?.rooms?.filter(r => r.isPaid).map((r, i) => (
                                         <tr key={i} className="hover:bg-white dark:hover:bg-gray-900 border-b border-gray-100 dark:border-gray-800 print:border-black">
                                             <td className="px-4 py-2 border dark:border-gray-700 print:border-black font-mono font-bold w-12 text-center">{i + 1}</td>
                                             <td className="px-4 py-2 border dark:border-gray-700 print:border-black font-bold">{r.receiverName || 'Unknown'}</td>
@@ -395,11 +409,11 @@ export default function DisbursementPage() {
                                     ))
                                 )}
                             </tbody>
-                            {paidRooms.length > 0 && (
+                            {data?.rooms?.some(r=>r.isPaid) && (
                                 <tfoot className="bg-gray-50 dark:bg-gray-900 font-bold print:bg-gray-100">
                                     <tr>
                                         <td colSpan="4" className="px-4 py-3 border dark:border-gray-700 print:border-black text-right uppercase">Total Disbursed</td>
-                                        <td className="px-4 py-3 border dark:border-gray-700 print:border-black text-right">{paidRooms.reduce((sum, r)=>sum+r.totalAmount,0).toLocaleString()} SAR</td>
+                                        <td className="px-4 py-3 border dark:border-gray-700 print:border-black text-right">{data.rooms.filter(r=>r.isPaid).reduce((sum, r)=>sum+r.totalAmount,0).toLocaleString()} SAR</td>
                                     </tr>
                                 </tfoot>
                             )}
@@ -413,14 +427,14 @@ export default function DisbursementPage() {
       {/* Payment Modal */}
       {selectedRoom && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:hidden">
-              <div className="bg-white dark:bg-gray-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                  <div className="p-6 border-b dark:border-gray-800 bg-gray-50 dark:bg-black/20">
+              <div className="bg-white dark:bg-gray-900 w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200">
+                  <div className="p-6 border-b dark:border-gray-800 bg-gray-50 dark:bg-black/20 shrink-0">
                       <h2 className="text-xl font-bold flex items-center gap-2">
                           Payment Confirmation <span className="text-gray-400 text-sm font-normal">Room {selectedRoom.roomNumber}</span>
                       </h2>
                   </div>
                   
-                  <div className="p-6 space-y-6">
+                  <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
                       <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl flex justify-between items-center border border-blue-100 dark:border-blue-900/20">
                           <div>
                               <p className="text-xs font-bold text-blue-600 uppercase mb-1">Total Payable Amount</p>
@@ -442,13 +456,14 @@ export default function DisbursementPage() {
                                   return <option key={uid} value={uid}>{e.name} ({e.empCode})</option>;
                               })}
                           </select>
-                          <p className="text-xs text-gray-400">Only employees assigned to Room {selectedRoom.roomNumber} are listed.</p>
+                          <p className="text-xs text-gray-400">Only employees assigned to this room are listed.</p>
                       </div>
 
-                      <div className="max-h-40 overflow-y-auto border rounded-xl p-2 bg-gray-50 dark:bg-gray-800/50">
+                      {/* REMOVED max-h constraint as requested to show ALL dots/items */}
+                      <div className="border rounded-xl p-2 bg-gray-50 dark:bg-gray-800/50">
                           <p className="text-xs font-bold text-gray-400 uppercase mb-2 px-2">Breakdown</p>
                           {selectedRoom.employees.map(e => (
-                              <div key={e.user?._id || e.user} className="flex justify-between items-center p-2 hover:bg-white dark:hover:bg-gray-700 rounded-lg text-sm">
+                              <div key={e.user?._id || e.user} className="flex justify-between items-center p-2 hover:bg-white dark:hover:bg-gray-700 rounded-lg text-sm border-b border-dashed border-gray-100 last:border-0">
                                   <span>{e.name}</span>
                                   <span className="font-mono font-bold mr-2">{['Present','On Duty'].includes(e.status) ? e.finalAmount : '-'}</span>
                               </div>
@@ -456,7 +471,7 @@ export default function DisbursementPage() {
                       </div>
                   </div>
 
-                  <div className="p-6 border-t dark:border-gray-800 bg-gray-50 dark:bg-black/20 flex gap-3">
+                  <div className="p-6 border-t dark:border-gray-800 bg-gray-50 dark:bg-black/20 flex gap-3 shrink-0">
                       <button onClick={() => setSelectedRoom(null)} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-xl transition-colors">Cancel</button>
                       <button 
                          onClick={confirmPayment} 

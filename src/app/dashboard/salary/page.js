@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
     Briefcase, History, Calculator, Users, DollarSign,
     Calendar, CheckCircle, AlertCircle, Scissors, X, Save, Printer, Eye,
-    FileText, ScrollText, Trash2, Pencil, Upload, Search
+    FileText, ScrollText, Trash2, Pencil, Upload, Search, Clock
 } from "lucide-react";
 import toast from "react-hot-toast";
 import * as XLSX from 'xlsx';
@@ -32,6 +32,8 @@ export default function SalaryManagementPage() {
     // Saudi Arabia Date
     const getTodaySA = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
     const [todayDate, setTodayDate] = useState(getTodaySA());
+    const [saTime, setSaTime] = useState(""); // SA Clock
+
     const [employees, setEmployees] = useState([]);
     const [revenue, setRevenue] = useState(0);
     const [perHeadRate, setPerHeadRate] = useState(0);
@@ -54,6 +56,14 @@ export default function SalaryManagementPage() {
     const [allUsersList, setAllUsersList] = useState([]); // For dropdown
 
     useEffect(() => { fetchHistory(); fetchRecoveries(); }, []);
+
+    // Clock Effect
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setSaTime(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Riyadh', hour12: true }));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     const fetchRecoveries = async () => {
         try {
@@ -472,12 +482,23 @@ export default function SalaryManagementPage() {
             )}
 
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
-                <div>
-                    <h2 className="text-2xl font-bold dark:text-white flex items-center gap-2">
-                        <Briefcase className="h-6 w-6 text-[var(--primary)]" /> Salary Management
-                    </h2>
-                    <p className="text-gray-500 text-sm">Daily distribution & deductions.</p>
+                <div className="flex items-center gap-4">
+                    <div>
+                        <h2 className="text-2xl font-bold dark:text-white flex items-center gap-2">
+                            <Briefcase className="h-6 w-6 text-[var(--primary)]" /> Salary Management
+                        </h2>
+                        <p className="text-gray-500 text-sm">Daily distribution & deductions.</p>
+                    </div>
                 </div>
+
+                {/* SA Timeline Clock */}
+                {saTime && (
+                    <div className="hidden md:flex items-center gap-2 p-2 bg-black text-white rounded-lg font-mono text-sm shadow-lg">
+                        <Clock className="h-4 w-4 text-green-400 animate-pulse" />
+                        <span>KSA: {saTime}</span>
+                    </div>
+                )}
+
 
                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
                     <button onClick={() => { setActiveTab('history'); setEditingReportId(null); }} className={`px-4 py-2 rounded-lg text-sm font-bold flex gap-2 ${activeTab === 'history' ? 'bg-white dark:bg-gray-700 shadow-sm text-[var(--primary)] dark:text-white' : 'text-gray-500'}`}><History className="h-4 w-4" /> History</button>
@@ -489,69 +510,105 @@ export default function SalaryManagementPage() {
 
             {/* HISTORY TAB */}
             {activeTab === 'history' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 print:hidden">
-                    {historyReports.map(report => {
-                        // Calculate filter counts for display
-                        let displayPaidCount = report.totalPresent;
-                        if (userShift && userShift !== 'All') {
-                            displayPaidCount = report.records.filter(r => r.shift === userShift && ['Present', 'On Duty'].includes(r.status)).length;
-                        }
+                <div className="space-y-6">
+                    {/* Quick Actions */}
+                    <div className="flex gap-2 mb-4">
+                        {(() => {
+                            const today = getTodaySA();
+                            const yesterday = new Date(new Date().setDate(new Date().getDate() - 1)).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+                            const hasToday = historyReports.some(r => r.date === today);
+                            const hasYesterday = historyReports.some(r => r.date === yesterday);
 
-                        return (
-                            <div key={report._id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group relative flex flex-col justify-between">
-                                <div>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className="flex items-center gap-2 text-gray-500 font-medium"><Calendar className="h-4 w-4" />{report.date}</div>
-                                        <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full uppercase">{report.status}</span>
-                                    </div>
-
-                                    {/* Admin Actions moved to avoid overlap with status/content */}
-                                    {isAdmin && (
-                                        <div className="absolute top-16 right-4 flex flex-col gap-2 z-10 transition-all opacity-80 hover:opacity-100">
-                                            <button
-                                                onClick={() => handleEdit(report)}
-                                                className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shadow-sm border border-blue-100"
-                                                title="Edit Report"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => deleteReport(report._id)}
-                                                className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors shadow-sm border border-red-100"
-                                                title="Delete Report"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </button>
-                                        </div>
+                            return (
+                                <>
+                                    {!hasToday && (
+                                        <button 
+                                            onClick={() => { setTodayDate(today); setActiveTab('manage'); }}
+                                            className="px-4 py-2 bg-[var(--primary)] text-white font-bold rounded-xl text-sm shadow hover:opacity-90 flex items-center gap-2"
+                                        >
+                                            <Calendar className="h-4 w-4"/> Create for Today ({today})
+                                        </button>
                                     )}
+                                    {!hasYesterday && (
+                                        <button 
+                                             onClick={() => { setTodayDate(yesterday); setActiveTab('manage'); }}
+                                             className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-white font-bold rounded-xl text-sm hover:bg-gray-200 flex items-center gap-2"
+                                        >
+                                            <History className="h-4 w-4"/> Create for Yesterday
+                                        </button>
+                                    )}
+                                </>
+                            );
+                        })()}
+                    </div>
 
-                                    <div className="space-y-4">
-                                        <div><p className="text-sm text-gray-500">Revenue</p><p className="text-2xl font-black dark:text-white">SAR {Number(report.totalRevenue).toLocaleString()}</p></div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"><p className="text-[10px] text-gray-500 font-bold uppercase">Per Head</p><p className="text-lg font-bold text-[var(--primary)] dark:text-white">{report.perHead}</p></div>
-                                            <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-xl"><p className="text-[10px] text-green-600 font-bold uppercase">Surplus</p><p className="text-lg font-bold text-green-700 dark:text-green-300">{Number(report.surplus).toFixed(2)}</p></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 print:hidden">
+                        {historyReports.map(report => {
+                            // Calculate filter counts for display
+                            let displayPaidCount = report.totalPresent;
+                            if (userShift && userShift !== 'All') {
+                                displayPaidCount = report.records.filter(r => r.shift === userShift && ['Present', 'On Duty'].includes(r.status)).length;
+                            }
+
+                            return (
+                                <div key={report._id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group relative flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <div className="flex items-center gap-2 text-gray-900 dark:text-white font-bold text-lg"><Calendar className="h-4 w-4 text-[var(--primary)]" />{report.date}</div>
+                                                <p className="text-xs text-gray-400 pl-6">{new Date(report.createdAt || report.updatedAt || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                            </div>
+                                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full uppercase">{report.status}</span>
+                                        </div>
+
+                                        {/* Admin Actions moved to avoid overlap with status/content */}
+                                        {isAdmin && (
+                                            <div className="absolute top-16 right-4 flex flex-col gap-2 z-10 transition-all opacity-80 hover:opacity-100">
+                                                <button
+                                                    onClick={() => handleEdit(report)}
+                                                    className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shadow-sm border border-blue-100"
+                                                    title="Edit Report"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => deleteReport(report._id)}
+                                                    className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors shadow-sm border border-red-100"
+                                                    title="Delete Report"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-4">
+                                            <div><p className="text-sm text-gray-500">Revenue</p><p className="text-2xl font-black dark:text-white">SAR {Number(report.totalRevenue).toLocaleString()}</p></div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"><p className="text-[10px] text-gray-500 font-bold uppercase">Per Head</p><p className="text-lg font-bold text-[var(--primary)] dark:text-white">{report.perHead}</p></div>
+                                                <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-xl"><p className="text-[10px] text-green-600 font-bold uppercase">Surplus</p><p className="text-lg font-bold text-green-700 dark:text-green-300">{Number(report.surplus).toFixed(2)}</p></div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                {/* Footer - Separated Layout */}
-                                <div className="pt-4 mt-2 border-t dark:border-gray-800 flex justify-between items-center">
-                                    <div className="flex items-center gap-2">
-                                        <Users className="h-4 w-4 text-gray-500" />
-                                        <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
-                                            {displayPaidCount} Paid {userShift && userShift !== 'All' ? `(${userShift})` : ''}
-                                        </span>
+                                    {/* Footer - Separated Layout */}
+                                    <div className="pt-4 mt-2 border-t dark:border-gray-800 flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <Users className="h-4 w-4 text-gray-500" />
+                                            <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
+                                                {displayPaidCount} Paid {userShift && userShift !== 'All' ? `(${userShift})` : ''}
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={() => setViewReport(report)}
+                                            className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-transform"
+                                        >
+                                            <Eye className="h-3 w-3" /> Slips
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={() => setViewReport(report)}
-                                        className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-transform"
-                                    >
-                                        <Eye className="h-3 w-3" /> Slips
-                                    </button>
                                 </div>
-                            </div>
-                        )
-                    })}
+                            )
+                        })}
+                    </div>
                 </div>
             )}
 
@@ -786,60 +843,118 @@ export default function SalaryManagementPage() {
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
-                                <thead className="bg-gray-50 dark:bg-gray-800 text-[10px] text-gray-500 uppercase font-bold">
-                                    <tr><th className="px-6 py-3">Details</th><th className="px-6 py-3">Room</th><th className="px-6 py-3">Status</th><th className="px-6 py-3">Shift</th><th className="px-6 py-3">Rate</th><th className="px-6 py-3">Deductions</th><th className="px-6 py-3 text-right sticky right-0 bg-white dark:bg-gray-800 shadow-xl">Net</th><th className="px-6 py-3 text-center">Action</th></tr>
+                                <thead className="bg-gray-5 dark:bg-gray-800 text-[10px] text-gray-500 uppercase font-bold">
+                                    <tr><th className="px-6 py-3">Details</th><th className="px-6 py-3">Room</th><th className="px-6 py-3">Status</th><th className="px-6 py-3">Shift</th><th className="px-6 py-3">Rate</th><th className="px-6 py-3 w-64">Recoveries & Deductions</th><th className="px-6 py-3 text-right sticky right-0 bg-white dark:bg-gray-800 shadow-xl">Net</th><th className="px-6 py-3 text-center">Action</th></tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
                                     {filteredEmployees.map(emp => {
                                         const isPresent = ['Present', 'On Duty'].includes(emp.status);
                                         const totalDeductions = emp.deductions.reduce((sum, d) => sum + d.amount, 0);
                                         const netAmount = isPresent ? Math.max(0, perHeadRate - totalDeductions) : 0;
+                                        
+                                        // Separate Deductions
+                                        const recoveriesRec = emp.deductions.filter(d => d.reason.startsWith('Recovery:'));
+                                        const otherDeductions = emp.deductions.filter(d => !d.reason.startsWith('Recovery:'));
+
                                         return (
                                             <tr key={emp._id} className={`hover:bg-gray-50 dark:hover:bg-gray-800 ${!isPresent ? 'bg-gray-50/50 opacity-60' : ''}`}>
                                                 <td className="px-6 py-3"><p className="font-bold dark:text-white">{emp.name}</p><p className="text-xs text-gray-400">{emp.empCode}</p></td>
                                                 <td className="px-6 py-3"><span className="font-bold bg-black text-white px-2 py-1 rounded text-xs">{emp.roomNumber || 'N/A'}</span></td>
-                                                <td className="px-6 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${isPresent ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>{emp.status}</span></td>
-                                                <td className="px-6 py-3"><span className="text-xs font-bold text-gray-500">{emp.shift || '-'}</span></td>
-                                                <td className="px-6 py-3 font-mono font-bold text-gray-500">{isPresent ? perHeadRate : '-'}</td>
-                                                <td className="px-6 py-3 flex flex-wrap gap-1">{emp.deductions.map((d, i) => <span key={i} className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded flex items-center gap-1">{d.amount}<X onClick={() => removeDeduction(emp._id, i)} className="h-3 w-3 cursor-pointer hover:scale-125" /></span>)}</td>
-                                                <td className="px-6 py-3 text-right font-black text-lg dark:text-white sticky right-0 bg-white dark:bg-gray-900 border-l border-gray-100 dark:border-gray-800 shadow-[inset_10px_0_10px_-10px_rgba(0,0,0,0.05)]">{isPresent ? netAmount : '-'}</td>
-                                                <td className="px-6 py-3 text-center">{isPresent && <button onClick={() => openDeductionModal(emp)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Scissors className="h-4 w-4" /></button>}</td>
+                                                <td className="px-6 py-3"><span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${isPresent ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{emp.status}</span></td>
+                                                <td className="px-6 py-3 font-bold">{emp.shift}</td>
+                                                <td className="px-6 py-3 font-mono text-gray-500">{isPresent ? perHeadRate : '-'}</td>
+                                                <td className="px-6 py-3">
+                                                    <div className="space-y-2">
+                                                        {recoveriesRec.length > 0 && (
+                                                            <div className="space-y-1">
+                                                                <p className="text-[9px] font-bold text-purple-600 uppercase">Recoveries</p>
+                                                                {recoveriesRec.map((d, i) => (
+                                                                    <div key={`rec-${i}`} className="flex justify-between items-center text-xs bg-purple-50 dark:bg-purple-900/10 p-1 rounded border border-purple-100">
+                                                                        <span className="truncate max-w-[100px]">{d.reason.replace('Recovery: ', '')}</span>
+                                                                        <span className="font-bold text-purple-700">{d.amount}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {otherDeductions.length > 0 && (
+                                                            <div className="space-y-1">
+                                                                <p className="text-[9px] font-bold text-red-600 uppercase">Deductions</p>
+                                                                {otherDeductions.map((d, i) => (
+                                                                    <div key={`ded-${i}`} className="flex justify-between items-center text-xs bg-red-50 dark:bg-red-900/10 p-1 rounded border border-red-100 group">
+                                                                        <span className="truncate max-w-[100px]">{d.reason}</span>
+                                                                        <div className="flex items-center gap-1">
+                                                                            <span className="font-bold text-red-700">{d.amount}</span>
+                                                                            <button onClick={() => removeDeduction(emp._id, emp.deductions.indexOf(d))} className="opacity-0 group-hover:opacity-100 hover:text-red-600"><X className="h-3 w-3"/></button>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {emp.deductions.length === 0 && <span className="text-gray-300">-</span>}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-3 text-right sticky right-0 bg-white dark:bg-gray-800 shadow-xl group-hover:bg-gray-50 dark:group-hover:bg-gray-800">
+                                                    <p className={`font-black text-lg ${netAmount === 0 ? 'text-gray-300' : 'text-green-600'}`}>{netAmount}</p>
+                                                </td>
+                                                <td className="px-6 py-3 text-center">
+                                                    {isPresent && (
+                                                        <div className="flex justify-center gap-2">
+                                                            <button onClick={() => openDeductionModal(emp)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors tooltip" title="Apply Standard Deduction"><Scissors className="h-4 w-4" /></button>
+                                                        </div>
+                                                    )}
+                                                </td>
                                             </tr>
                                         )
                                     })}
                                 </tbody>
                             </table>
                         </div>
-                        <div className="p-4 border-t dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex justify-end">
-                            <button onClick={handleFinalize} className="px-6 py-3 bg-gray-900 text-white dark:bg-white dark:text-gray-900 font-bold rounded-xl shadow-lg flex items-center gap-2 hover:-translate-y-1 transition-transform">
-                                <Save className="h-4 w-4" /> {editingReportId ? "Update Report" : "Finalize Sheet"}
+                        <div className="p-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-800 flex justify-end">
+                            <button
+                                onClick={handleFinalize}
+                                className="px-8 py-3 bg-black text-white font-bold rounded-xl shadow-lg hover:bg-gray-800 transition-all flex items-center gap-2"
+                            >
+                                <Save className="h-5 w-5" /> {editingReportId ? 'Update & Save' : 'Finalize & Save'}
                             </button>
                         </div>
                     </div>
-                </div>
-            )}
 
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:hidden">
-                    <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-2xl shadow-2xl p-6">
-                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Scissors className="h-5 w-5 text-red-500" /> Apply Cut</h3>
-                        <div className="space-y-4">
-                            <div><label className="text-[10px] font-bold text-gray-500 uppercase">Employee</label><p className="font-bold text-lg">{selectedEmployee?.name}</p></div>
-                            <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Reason</label><div className="flex gap-2">{['Fine', 'Recovery', 'Advance'].map(r => <button key={r} onClick={() => setDeductionReason(r)} className={`px-2 py-1 text-xs font-bold border rounded ${deductionReason === r ? 'bg-black text-white' : 'text-gray-500'}`}>{r}</button>)}</div></div>
-                            <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Amount</label><input type="number" autoFocus value={deductionAmount} onChange={(e) => setDeductionAmount(e.target.value)} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-bold text-xl outline-none focus:ring-2 focus:ring-[var(--primary)]" placeholder="0" /></div>
+                    {/* DEDUCTION MODAL */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                            <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-2xl shadow-xl overflow-hidden p-6 animate-in zoom-in-95">
+                                <h3 className="font-bold text-xl mb-4 text-center">Apply Deduction</h3>
+                                <p className="text-center text-gray-400 text-sm mb-6">{selectedEmployee?.name}</p>
 
-                            <button onClick={applyFullCut} className="w-full py-2 bg-red-100 text-red-600 font-bold rounded-xl hover:bg-red-200 transition-colors uppercase text-xs flex items-center justify-center gap-2">
-                                <AlertCircle className="h-4 w-4" /> Full Salary Cut (Set to 0)
-                            </button>
-
-                            <div className="flex gap-2 pt-2 border-t dark:border-gray-800 mt-2">
-                                <button onClick={() => setIsModalOpen(false)} className="flex-1 py-2 font-bold text-gray-500 hover:bg-gray-100 rounded-xl">Cancel</button>
-                                <button onClick={applyDeduction} className="flex-1 py-2 font-bold bg-red-500 text-white rounded-xl shadow-lg hover:bg-red-600">Apply</button>
+                                <div className="space-y-4">
+                                    <div className="flex gap-2 justify-center mb-2">
+                                        <button onClick={() => setDeductionReason("Mess Problem")} className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold hover:bg-gray-200">Mess Problem</button>
+                                        <button onClick={() => setDeductionReason("Fine")} className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold hover:bg-gray-200">Fine</button>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        placeholder="Reason"
+                                        value={deductionReason}
+                                        onChange={(e) => setDeductionReason(e.target.value)}
+                                        className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-bold text-sm outline-none"
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="Amount"
+                                        value={deductionAmount}
+                                        onChange={(e) => setDeductionAmount(e.target.value)}
+                                        className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-bold text-lg outline-none"
+                                    />
+                                    <button onClick={applyDeduction} className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl shadow-lg hover:opacity-90">Confirm Deduction</button>
+                                    <button onClick={applyFullCut} className="w-full py-2 text-red-500 font-bold text-sm hover:underline">Apply Full Cut ({perHeadRate})</button>
+                                    <button onClick={() => setIsModalOpen(false)} className="w-full py-2 text-gray-400 font-bold">Cancel</button>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             )}
+
         </div>
     );
 }
